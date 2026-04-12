@@ -124,6 +124,57 @@ def build_round_plan(
     )
 
 
+def build_dialogue_hint_text(plan: ContinuationRoundPlan) -> str:
+    """构建对白质量标准提示（仅在 balanced 模式下使用）
+
+    根据轮次调整对白提示的重点：
+    - 前2轮：强调冲突张力、角色声音个体化
+    - 中段：强调三功能、微限冲突
+    - 收尾轮：强调自反性冲突、非直接冲突（留白）
+    """
+    lines = ["【对白质量标准】"]
+
+    # 对白三功能（所有轮次都适用）
+    lines.append("■ 每句重要对白至少满足一个功能：")
+    lines.append("  - 揭示人物：语言风格/话题选择/潜台词")
+    lines.append("  - 推进行动：话语改变现状，向高潮移动")
+    lines.append("  - 建立主题：承载主题但不直接说出")
+
+    # 角色声音个体化（早期轮次重点）
+    if plan.round_index <= 2:
+        lines.append("■ 角色声音：不同角色词彙/句式/话题偏好须有明显差异")
+        lines.append("  测试：删除说话者标签，能否分辨是谁说的？")
+
+    # 微限冲突（中期轮次重点）
+    if 2 <= plan.round_index < plan.max_rounds - 1:
+        lines.append("■ 微限冲突：每句对白之间须有微小张力变化")
+        lines.append("  - 来回之间制造犹豫、停顿、打断")
+        lines.append("  - 让对白像乒乓球来回，而非网球")
+
+    # 非直接冲突（收尾轮重点）
+    if plan.is_final_round or plan.should_warn_wrap_up:
+        lines.append("■ 非直接冲突：适当使用沉默、绕弯子、替代话题")
+        lines.append("  - 有时不说不比说更有力量")
+
+    # 自反性冲突（收尾轮或情感高潮时）
+    if plan.is_final_round:
+        lines.append("■ 自反性冲突：角色内心挣扎须有体现")
+        lines.append("  - 可用半句、沉默、内心独白表达")
+
+    # 收尾轮特别注意
+    if plan.is_final_round:
+        lines.append("■ 收尾对白：自然结束，不过度解释，留余味")
+
+    # 禁止清单（所有轮次）
+    lines.append("■ 禁止：")
+    lines.append("  - 角色解释自己行为（应让行动自明）")
+    lines.append("  - 对白中介绍已知信息（历史倒叙）")
+    lines.append("  - 每句都是完整陈述句（要有省略、打断）")
+    lines.append("  - 直接说出主题（应让主题涌现）")
+
+    return "\n".join(lines)
+
+
 def build_budget_hint_text(
     plan: ContinuationRoundPlan,
     continuation_guidance: str | None = None,

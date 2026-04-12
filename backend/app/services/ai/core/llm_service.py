@@ -13,6 +13,7 @@ import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.services.ai.generation.continuation_budget_runtime import (
     build_budget_hint_text,
+    build_dialogue_hint_text,
     build_round_plan,
     count_text_units,
     estimate_required_call_count,
@@ -399,6 +400,11 @@ def _build_continuation_user_prompt(
     budget_hint = build_budget_hint_text(round_plan, getattr(request, "continuation_guidance", None))
     if budget_hint:
         user_prompt_parts.append(budget_hint)
+
+    #追加对白质量提示
+    dialogue_hint = build_dialogue_hint_text(round_plan)
+    if dialogue_hint:
+        user_prompt_parts.append(dialogue_hint)
 
     return "\n\n".join(user_prompt_parts)
 
