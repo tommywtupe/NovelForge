@@ -149,16 +149,28 @@ class ReviewResultCardContent(BaseModel):
     target_snapshot: Optional[str] = Field(default=None, description="被审核内容快照")
     meta: Optional[dict[str, Any]] = Field(default_factory=dict, description="扩展元数据")
 
+class BeatItem(BaseModel):
+    """章节节拍"""
+    beat_id: str = Field(description="节拍序号")
+    beat_action: str = Field(description="节拍动作：描述该节拍中角色做了什么")
+    beat_subtext_action: Optional[str] = Field(None, description="节拍潜文本动作：描述该动作背后的意图/含义")
+    turning_point: bool = Field(default=False, description="是否为转折点")
+
+
 class ChapterOutline(BaseModel):
     """章节大纲"""
     volume_number: int = Field(description="卷号，如果没有找到，则设置为0")
     stage_number:int=Field(description="该章节属于第几个阶段，从1开始")
     title: str= Field(description="章节标题")
     chapter_number: int = Field(description="章节序号")
-    
+
     overview: str = Field(description="章节细纲,详略得当，避免过于单薄。如果主角有了显著的提升，则相关信息不能省略，需要准确数据描述出来(如实力大幅提升、经济或资源大幅增长了多少)。",min_length=100)
     entity_list: List[str] = Field(
         description="章节中出场的重要实体列表，只能从上下文提供的组织/角色/场景卡实体中选择，不得新增、自创；实体名称必须是纯名称（不得包含括号/备注）。注意,为了精简上下文，避免实体列表中出现该章节未出场的冗余实体",
+    )
+    beat_list: List[BeatItem] = Field(
+        default=None,
+        description="章节节拍列表，每个节拍描述角色动作和潜文本，用于细化章节内的叙事节奏，1个节拍1000字",
     )
 
     

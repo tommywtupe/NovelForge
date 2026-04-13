@@ -54,6 +54,7 @@ FIELD_TITLE_ZH_MAP: Dict[str, str] = {
     "entity_snapshot": "实体状态快照",
     "stage_number": "阶段号",
     "chapter_number": "章节号",
+    "beat_list": "节拍列表",
     "entity_list": "实体列表",
     "stage_name": "阶段名称",
     "reference_chapter": "参考章节范围",
