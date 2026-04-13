@@ -28,7 +28,7 @@ debate = AI.Debate(
     agent_2_system_prompt="你是反方辩手，认为金钱不是万能的。你需要：1. 指出金钱无法解决的问题（如真爱、健康、时间等）2. 强调精神价值的重要性 3. 用具体案例反驳对方。请保持逻辑严密，论据充分。",
     agent_2_llm_config=5,
     temperature=0.8,
-    max_tokens=3000
+    max_tokens=4000
   )
 #</node>
 

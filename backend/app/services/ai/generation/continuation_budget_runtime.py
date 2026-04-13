@@ -329,7 +329,7 @@ def _estimate_round_cap(
     if mode == "prompt_only":
         return 1
 
-    target = target_word_count or current_word_count or 3000
+    target = target_word_count or current_word_count or 4000
 
     return 3 if target <= 1000 else 5
 

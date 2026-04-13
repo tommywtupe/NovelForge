@@ -1591,7 +1591,7 @@ const continuationDialogState = reactive<{
 	wordControlMode: ContinuationWordControlMode
 	guidance: string
 }>({
-	targetWordCount: 3000,
+	targetWordCount: 4000,
 	wordControlMode: 'balanced',
 	guidance: '',
 })
@@ -1830,7 +1830,7 @@ const activeContinuationConfig = reactive<{
 	targetWordCount: number
 	wordControlMode: ContinuationWordControlMode
 }>({
-	targetWordCount: 3000,
+	targetWordCount: 4000,
 	wordControlMode: 'balanced',
 })
 
@@ -1979,7 +1979,7 @@ function getSelectionWithLineInfo(): {
 }
 
 function resolveContinuationDefaults() {
-	let targetWordCount = 3000
+	let targetWordCount = 4000
 	let wordControlMode: ContinuationWordControlMode = 'balanced'
 	try {
 		const storedTarget = Number(localStorage.getItem(`nf:chapter:continuation-target:${props.card.id}`) || '')

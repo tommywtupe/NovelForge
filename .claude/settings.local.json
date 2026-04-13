@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(done)",
+      "Bash(python -c:*)",
+      "Bash(python3 -c:*)",
+      "Bash(grep:*)",
+      "Bash(npm run build)",
+      "Bash(npm run typecheck:web)",
+      "Bash(python -m py_compile app/services/ai/generation/batch_chapter_service.py)",
+      "Bash(python3:*)"
+    ]
+  }
+}

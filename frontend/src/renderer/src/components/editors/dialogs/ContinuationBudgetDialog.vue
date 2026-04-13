@@ -71,7 +71,7 @@ const emit = defineEmits<{
   ): void
 }>()
 
-const localTargetWordCount = ref<number>(3000)
+const localTargetWordCount = ref<number>(4000)
 const localWordControlMode = ref<ContinuationWordControlMode>('balanced')
 const localGuidance = ref<string>('')
 
@@ -79,7 +79,7 @@ watch(
   () => props.visible,
   (visible) => {
     if (!visible) return
-    localTargetWordCount.value = props.targetWordCount || 3000
+    localTargetWordCount.value = props.targetWordCount || 4000
     localWordControlMode.value = props.wordControlMode || 'balanced'
     localGuidance.value = props.guidance || ''
   },
@@ -92,7 +92,7 @@ function handleCancel() {
 
 function handleConfirm() {
   emit('confirm', {
-    targetWordCount: Math.max(200, Math.floor(localTargetWordCount.value || 3000)),
+    targetWordCount: Math.max(200, Math.floor(localTargetWordCount.value || 4000)),
     wordControlMode: localWordControlMode.value,
     guidance: localGuidance.value.trim(),
   })
