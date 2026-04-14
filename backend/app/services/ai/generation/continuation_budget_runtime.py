@@ -187,9 +187,11 @@ def build_budget_hint_text(
         lines.append(f"- 剩余字数：约 {max(plan.remaining_word_count, 0)} 字")
     if plan.mode != "prompt_only":
         if plan.is_final_round:
-            lines.append(f"- 当前轮次：第 {plan.round_index} 轮（本轮收尾）")
+            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍（收尾节拍），本轮将处理本章最后一个节拍，并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
+        elif plan.round_index == 1:
+            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，这是本章第一节约，需要承接上一话最后一个节拍的正文结尾，并参考第 {plan.round_index} 节拍的动作和潜文本动作。确保转场自然、情绪连贯")
         else:
-            lines.append(f"- 当前轮次：第 {plan.round_index} 轮（预计最多 {plan.max_rounds} 轮）")
+            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，本轮将处理本章第 {plan.round_index} 节拍，并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
     if plan.suggested_word_count is not None and plan.mode != "prompt_only":
         lines.append(f"- 本轮建议规模：约 {plan.suggested_word_count} 字")
     if plan.hard_word_limit is not None:

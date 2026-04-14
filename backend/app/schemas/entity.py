@@ -86,6 +86,17 @@ class CharacterCardCore(Entity):
 class CharacterCard(CharacterCardCore):
     entity_type: EntityType = Field("character", description="实体类型标记")
     personality: str = Field(description="性格关键词")
+    physique: str = Field(description="体态（身材比例、体格、姿态）,呈现角色潜意识中的身体记忆与防备模式")
+    aura: str = Field(description="气质（气场、神韵、给人的氛围感）,反映内在修炼与外在修养的统一")
+    appearance: str = Field(description="相貌（五官特征、面部细节）,承载角色过往经历与独特记忆点")
+    dressing: str = Field(description="衣着（穿搭风格、服装材质与配饰）,体现社会身份、物质状况与价值取向")
+    core_desire: str = Field(description="核心渴望（角色最深处的欲望）")
+    core_fear: str = Field(description="核心恐惧（与渴望形成张力的人格阴影）")
+    defense_mechanism: str = Field(description="防御机制（当恐惧被触发时，角色如何保护自己，如压抑、投射、合理化）")
+    psychological_trauma: str = Field(description="心理创伤（造成核心恐惧的根源经历）")
+    public_persona: str = Field(description="公共面具（社交场合下展示的社会身份）")
+    private_persona: str = Field(description="私人面具（仅亲密之人可见的脆弱面）")
+    the_shadow_self: str = Field(description="真实面目（角色自己都不愿承认的深层自我）")
     core_drive: str = Field(description="核心驱动力/目标")
     character_arc: str = Field(description="角色在全书中的弧光")
     dynamic_info: Dict[DynamicInfoType, List[DynamicInfoItem]] = Field(
