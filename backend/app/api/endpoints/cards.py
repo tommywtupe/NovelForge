@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 from typing import List, Dict, Any
@@ -194,6 +196,42 @@ def get_card(card_id: int, db: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Card not found")
     return db_card
 
+
+def _transform_chapter_content(content: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    转换章节正文内容：
+    1. 移除 "……"
+    2. 移除 <节拍完成>
+    3. 简化句式 "不是...是" 为 "是..."
+    4. 简化句式 "不是...而是..." 为 "是..."
+    """
+    if not content:
+        return content
+
+    content = dict(content)
+    print("content", content)
+    def _replace_text(text: str) -> str:
+        if not isinstance(text, str):
+            return text
+
+        # 1. 移除 "……"
+        text = text.replace('……', '')
+        # 2. 移除 <节拍完成>
+        text = text.replace('<节拍完成>', '')
+        # 3. 简化 "不是...是" → "是..."
+        text = re.sub(r'不是([^，,]*)，是([^，,]+)', r'是\2', text)
+        # 4. 简化 "不是...而是..." → "是..."
+        text = re.sub(r'不是([^，,]*)，而是([^，,]+)', r'是\2', text)
+
+        return text
+
+    # 处理 'content' 字段（如果有）
+    if 'content' in content:
+        content['content'] = _replace_text(content['content'])
+
+    return content
+
+
 @router.put("/cards/{card_id}", response_model=CardRead)
 def update_card(card_id: int, card: CardUpdate, db: Session = Depends(get_session)):
     # 获取更新前的状态
@@ -204,7 +242,14 @@ def update_card(card_id: int, card: CardUpdate, db: Session = Depends(get_sessio
         old_content = copy.deepcopy(old_card.content)
 
     was_needs_confirmation = getattr(old_card, 'needs_confirmation', False) if old_card else False
-    
+
+    # 转换章节正文内容
+    if old_card and card.content is not None:
+        card_type_name = getattr(old_card.card_type, 'name', None)
+        print("card_type_name", card_type_name)
+        if card_type_name == '章节正文':
+            card.content = _transform_chapter_content(card.content)
+
     service = CardService(db)
     db_card = service.update(card_id, card)
     if db_card is None:

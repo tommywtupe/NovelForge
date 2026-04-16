@@ -65,6 +65,17 @@ FIELD_TITLE_ZH_MAP: Dict[str, str] = {
     "role_type": "角色类型",
     "born_scene": "出生场景",
     "personality": "性格",
+    "physique": "体态",
+    "aura": "气质",
+    "appearance": "相貌",
+    "dressing": "衣着",
+    "core_desire": "核心渴望",
+    "core_fear": "核心恐惧",
+    "defense_mechanism": "防御机制",
+    "psychological_trauma": "心理创伤",
+    "public_persona": "公共面具",
+    "private_persona": "私人面具",
+    "the_shadow_self": "真实面目",
     "core_drive": "核心驱动力",
     "character_arc": "角色弧光",
     "influence": "影响力",
@@ -150,10 +161,10 @@ def create_default_card_types(session: Session) -> None:
         "组织/势力设定:@type:组织卡[previous:global].{content.name,content.entity_type,content.life_span,content.description,content.influence,content.relationship}\n"
         "分卷主线:@parent.content.main_target\n"
         "分卷辅线:@parent.content.branch_line\n"
-        "角色卡信息:@type:角色卡[previous:global].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.core_drive,content.character_arc}\n"
+        "角色卡信息:@type:角色卡[previous:global].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}\n"
         "地图/场景卡信息:@type:场景卡[previous].{content.name,content.description}\n"
         "之前的阶段故事大纲:@type:阶段大纲[previous:global:1].{content.stage_name,content.reference_chapter,content.analysis,content.overview,content.entity_snapshot}\n"
-        "上一章节大纲概述:@type:章节大纲[previous:global:1].{content.title,content.overview,content.entity_list}\n"
+        "上一章节大纲概述:@type:章节大纲[previous:global:1].{content.title,content.overview,content.entity_list,content.beat_list}\n"
         "本卷的StageCount总数为：@parent.content.stage_count\n"
         "卷末实体状态快照:@parent.content.entity_snapshot\n"
     )
@@ -163,13 +174,13 @@ def create_default_card_types(session: Session) -> None:
         "组织/势力设定:@type:组织卡[index=filter:content.name in $self.content.entity_list].{content.name,content.description,content.influence,content.relationship,content.dynamic_state}\n"
         "场景卡:@type:场景卡[index=filter:content.name in $self.content.entity_list].{content.name,content.description,content.dynamic_state}\n"
         "当前故事阶段大纲: @parent.content.overview\n"
-        "角色卡:@type:角色卡[index=filter:content.name in $self.content.entity_list].{content.name,content.role_type,content.born_scene,content.description,content.personality,content.core_drive,content.character_arc,content.dynamic_info}\n"
+        "角色卡:@type:角色卡[index=filter:content.name in $self.content.entity_list].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}\n"
         "物品卡:@type:物品卡[index=filter:content.name in $self.content.entity_list].{content.name,content.category,content.description,content.current_state,content.power_or_effect}\n"
         "概念卡:@type:概念卡[index=filter:content.name in $self.content.entity_list].{content.name,content.category,content.description,content.rule_definition,content.mastery_hint}\n"
         "最近的章节原文:@type:章节正文[previous:1].{content.title,content.chapter_number,content.content}\n"
         "参与者实体列表:@self.content.entity_list\n"
-        "当前章节大纲:@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.title,content.overview,content.entity_list}\n"
-        "下一章节大纲:@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{content.title,content.overview,content.entity_list}\n"
+        "当前章节大纲:@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.title,content.overview,content.entity_list,content.beat_list}\n"
+        "下一章节大纲:@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{content.title,content.overview,content.entity_list,content.beat_list}\n"
     )
 
     default_types = {
@@ -186,7 +197,7 @@ def create_default_card_types(session: Session) -> None:
             "作品标签:@作品标签.content\n"
             "世界观设定: @世界观设定.content.world_view\n"
             "组织/势力设定:@type:组织卡[previous:global].{content.name,content.description,content.influence,content.relationship}\n"
-            "character_card:@type:角色卡[previous]\n"
+            "character_card:@type:角色卡[previous].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}\n"
             "scene_card:@type:场景卡[previous]\n"
             "上一卷信息: @type:分卷大纲[index=$current.volumeNumber-1].content\n"
             "接下来请你创作第 @self.content.volume_number 卷的细纲\n"
@@ -199,7 +210,7 @@ def create_default_card_types(session: Session) -> None:
                 "当前分卷主线:@parent.content.main_target\n"
                 "当前分卷辅线:@parent.content.branch_line\n"
                 "该卷的阶段数量及卷末实体状态快照:@parent.{content.stage_count,content.entity_snapshot}\n"
-                "角色卡信息:@type:角色卡[previous]\n"
+                "角色卡信息:@type:角色卡[previous].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}\n"
                 "地图/场景卡信息:@type:场景卡[previous]\n"
                 "请为第 @self.content.volume_number 卷生成一份写作指南。"
             )
@@ -209,7 +220,7 @@ def create_default_card_types(session: Session) -> None:
             "组织/势力设定:@type:组织卡[previous:global].{content.name,content.entity_type,content.life_span,content.description,content.influence,content.relationship}\n"
             "分卷主线:@parent.content.main_target\n"
             "分卷辅线:@parent.content.branch_line\n"
-            "角色卡信息:@type:角色卡[previous:global].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.core_drive,content.character_arc}\n"
+            "角色卡信息:@type:角色卡[previous:global].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}\n"
             "地图/场景卡信息:@type:场景卡[previous]\n"
             "该卷的角色行动简述:@parent.content.character_action_list\n"
             "之前的阶段故事大纲，确保章节范围、剧情能够衔接:@type:阶段大纲[previous:global:1].{content.stage_name,content.reference_chapter,content.analysis,content.overview,content.entity_snapshot}\n"
@@ -220,7 +231,7 @@ def create_default_card_types(session: Session) -> None:
             "接下来请你创作第 @self.content.stage_number 阶段的故事细纲。"
         ), "default_ai_context_template_review": stage_review_context_template},
         "章节大纲": {"default_ai_context_template": (
-            "word_view: @世界观设定.content\n"
+            "world_view: @世界观设定.content.world_view\n"
             "volume_number: @self.content.volume_number\n"
             "volume_main_target: @type:分卷大纲[index=$current.volumeNumber].content.main_target\n"
             "volume_branch_line: @type:分卷大纲[index=$current.volumeNumber].content.branch_line\n"
@@ -231,18 +242,19 @@ def create_default_card_types(session: Session) -> None:
             "请开始创作第 @self.content.chapter_number 章的大纲，保证连贯性"
         )},
         "章节正文": {"editor_component": "CodeMirrorEditor", "is_ai_enabled": False, "default_ai_context_template": (
-            "世界观设定: @世界观设定.content\n"
+            "世界观设定: @世界观设定.content.world_view\n"
             "组织/势力设定:@type:组织卡[index=filter:content.name in $self.content.entity_list].{content.name,content.description,content.influence,content.relationship,content.dynamic_state}\n"
             "场景卡:@type:场景卡[index=filter:content.name in $self.content.entity_list].{content.name,content.description,content.dynamic_state}\n"
             "当前故事阶段大纲: @parent.content.overview\n"
-            "角色卡:@type:角色卡[index=filter:content.name in $self.content.entity_list].{content.name,content.role_type,content.born_scene,content.description,content.personality,content.core_drive,content.character_arc,content.dynamic_info}\n"
+            "角色卡:@type:角色卡[index=filter:content.name in $self.content.entity_list].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}\n"
             "物品卡:@type:物品卡[index=filter:content.name in $self.content.entity_list].{content.name,content.category,content.description,content.current_state,content.power_or_effect}\n"
             "概念卡:@type:概念卡[index=filter:content.name in $self.content.entity_list].{content.name,content.category,content.description,content.rule_definition,content.mastery_hint}\n"
             "最近的章节原文，确保能够衔接剧情:@type:章节正文[previous:1].{content.title,content.chapter_number,content.content}\n"
             "参与者实体列表，确保生成内容只会出场这些实体:@self.content.entity_list\n"
-            "请根据 @self.content.chapter_number： @self.content.title 的大纲@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.overview} 来创作章节正文内容，可以适当发散、设计与大纲内容不冲突的剧情来进行扩充。你无需在正文中重复标题：@self.content.title \n"
+            "请根据 @self.content.chapter_number： @self.content.title 的大纲@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.overview,content.beat_list} 来创作章节正文内容。节拍列表说明：每个节拍约1000字，包含beat_id（序号）、beat_action（角色动作）、beat_subtext_action（动作潜文本）、turning_point（是否转折点）。请按节拍顺序创作，可以适当发散、设计与大纲内容不冲突的剧情来进行扩充。你无需在正文中重复标题：@self.content.title \n"
             "注意，写作时必须保证结尾剧情与下一章的剧情大纲不会冲突，且不会提前涉及下一章剧情(如果存在的话):@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{content.title,content.overview}\n"
             "写作时请结合写作指南要求:@type:写作指南[index=filter:content.volume_number = $self.content.volume_number].{content.content}\n"
+            "请确保本次完成整个节拍的内容，且字数贴近限制要求。\n"
             ), "default_ai_context_template_review": chapter_review_context_template},
         "内容审核卡片": {
             "editor_component": "ReviewResultCardEditor",

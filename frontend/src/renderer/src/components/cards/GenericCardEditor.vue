@@ -687,7 +687,7 @@ function getPresetForType(typeName?: string) : PerCardAIParams | undefined {
     '阶段大纲': { prompt_name: '阶段大纲', response_model_name: 'StageLine', temperature: 0.6, max_tokens: 8192, timeout: 120 },
     '章节大纲': { prompt_name: '章节大纲', response_model_name: 'ChapterOutline', temperature: 0.6, max_tokens: 4096, timeout: 60 },
     '写作指南': { prompt_name: '写作指南', response_model_name: 'WritingGuide', temperature: 0.7, max_tokens: 8192, timeout: 60 },
-    '章节正文': { prompt_name: '内容生成', temperature: 0.7, max_tokens: 8192, timeout: 60 },
+    '章节正文': { prompt_name: '内容生成', temperature: 1.3, max_tokens: 65535, timeout: 180 },
   }
   return map[typeName || '']
 }

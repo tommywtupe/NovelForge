@@ -319,6 +319,7 @@ async def generate_continuation_streaming(
         })
 
         round_chunks: list[str] = []
+        
         async for chunk in _stream_continuation_single_round(
             session=session,
             request=round_request,
@@ -326,11 +327,18 @@ async def generate_continuation_streaming(
             round_plan=round_plan,
             track_stats=track_stats,
         ):
+
             round_chunks.append(chunk)
             if getattr(request, "stream", False):
                 yield chunk
 
         round_text = "".join(round_chunks)
+
+        # [SIMPLE FIX] 移除 <节拍完成> 标记，防止逃逸到正文
+        round_text = round_text.replace("<节拍完成>", "")
+        round_text = round_text.replace("......", "")
+        round_text = round_text.replace("……", "")
+
         if not round_text.strip():
             logger.warning("续写预算运行时在第 {} 轮拿到空输出，提前结束。", round_index)
             break
@@ -454,6 +462,8 @@ async def _stream_continuation_single_round(
     )
     should_stop_current_round = False
 
+    print(f"[DEBUG 硬截断模式] stream={getattr(request, 'stream', False)}, mode={round_plan.mode}, is_final={round_plan.is_final_round}, hard_limit={round_plan.hard_word_limit}, max_tokens={round_plan.max_tokens}")
+
     try:
         logger.debug("正在以LangChain ChatModel流式生成续写内容")
         async for chunk in model.astream(messages):
@@ -475,31 +485,60 @@ async def _stream_continuation_single_round(
             if not delta:
                 continue
 
+            # [SIMPLE FIX] 只检测完整标记，用于提前终止
+            BEAT_END_MARKER = "<节拍完成>"
+            if BEAT_END_MARKER in delta:
+                parts = delta.split(BEAT_END_MARKER, 1)
+                text_before_marker = parts[0]
+                print(f"[DEBUG <节拍完成>] 检测到完整标记, 标记前文本长度={len(text_before_marker)}")
+                if text_before_marker:
+                    accumulated += text_before_marker
+                    yield text_before_marker
+                print(f"[DEBUG <节拍完成>] 本轮结束, accumulated_len={len(accumulated)}")
+                should_stop_current_round = True
+                break
+
             if stream_with_hard_limit:
                 pending_buffer += delta
-                emitted_text, pending_buffer, reached_limit = _flush_streaming_buffer_with_limit(
+                # emitted_text, pending_buffer, reached_limit = _flush_streaming_buffer_with_limit(
+                #     already_emitted=accumulated,
+                #     pending_text=pending_buffer,
+                #     hard_limit=round_plan.hard_word_limit or 0,
+                # )
+                emitted_text, pending_buffer, _ = _flush_streaming_buffer_with_limit(
                     already_emitted=accumulated,
                     pending_text=pending_buffer,
                     hard_limit=round_plan.hard_word_limit or 0,
                 )
+                reached_limit = False
+                print(f"[DEBUG yield硬截断] emitted_text={repr(emitted_text[:50]) if emitted_text else '空'}, accumulated_len={len(accumulated)}, hard_limit={round_plan.hard_word_limit}")
                 if emitted_text:
                     accumulated += emitted_text
                     yield emitted_text
-                if reached_limit:
-                    should_stop_current_round = True
-                    break
+                # if reached_limit:
+                #     should_stop_current_round = True
+                #     break
                 continue
 
             accumulated += delta
+            print(f"[DEBUG yield] delta={repr(delta[:50]) if delta else '空'}, accumulated_len={len(accumulated)}")
             yield delta
 
         if stream_with_hard_limit and not should_stop_current_round and pending_buffer:
-            emitted_tail, pending_buffer, reached_limit = _flush_streaming_buffer_with_limit(
+            # emitted_tail, pending_buffer, reached_limit = _flush_streaming_buffer_with_limit(
+            #     already_emitted=accumulated,
+            #     pending_text=pending_buffer,
+            #     hard_limit=round_plan.hard_word_limit or 0,
+            #     force_flush_tail=True,
+            # )
+            emitted_tail, pending_buffer, _ = _flush_streaming_buffer_with_limit(
                 already_emitted=accumulated,
                 pending_text=pending_buffer,
                 hard_limit=round_plan.hard_word_limit or 0,
                 force_flush_tail=True,
             )
+            reached_limit = False
+            print(f"[DEBUG yield尾部刷新] emitted_tail={repr(emitted_tail[:50]) if emitted_tail else '空'}, accumulated_len={len(accumulated)}")
             if emitted_tail:
                 accumulated += emitted_tail
                 yield emitted_tail
@@ -565,7 +604,9 @@ def _flush_streaming_buffer_with_limit(
     hard_limit: int,
     force_flush_tail: bool = False,
 ) -> tuple[str, str, bool]:
+    print(f"[DEBUG _flush] 入参: 已发送长度={len(already_emitted)}, 待处理长度={len(pending_text)}, 硬限制={hard_limit}, 强制尾部={force_flush_tail}")
     if not pending_text:
+        print("[DEBUG _flush] 出参: 待处理为空，直接返回空")
         return "", "", False
 
     emitted_parts: list[str] = []
@@ -574,25 +615,36 @@ def _flush_streaming_buffer_with_limit(
     while True:
         sentence_end = _find_first_sentence_boundary(rest)
         if sentence_end is None:
+            print(f"[DEBUG _flush] 循环中断: 无更多句子边界，剩余长度={len(rest)}")
             break
         sentence = rest[:sentence_end]
         next_text = already_emitted + "".join(emitted_parts) + sentence
-        if count_text_units(next_text) > hard_limit:
+        next_units = count_text_units(next_text)
+        print(f"[DEBUG _flush] 句子={repr(sentence[:50])}, 下一句字数={next_units}, 硬限制={hard_limit}")
+        if next_units > hard_limit:
+            print(f"[DEBUG _flush] 出参: 超过硬限制，返回 {len(emitted_parts)} 个句子，剩余长度={len(rest)}")
             return "".join(emitted_parts), rest, True
         emitted_parts.append(sentence)
         rest = rest[sentence_end:]
 
     if force_flush_tail and rest:
         next_text = already_emitted + "".join(emitted_parts) + rest
-        if count_text_units(next_text) <= hard_limit:
+        next_units = count_text_units(next_text)
+        print(f"[DEBUG _flush] 尾部刷新: 剩余长度={len(rest)}, 下一句字数={next_units}")
+        if next_units <= hard_limit:
             emitted_parts.append(rest)
             rest = ""
+            print(f"[DEBUG _flush] 出参: 尾部刷新成功，全部发出")
         elif not emitted_parts:
-            truncated = _take_text_by_units(rest, hard_limit - count_text_units(already_emitted))
+            available = hard_limit - count_text_units(already_emitted)
+            print(f"[DEBUG _flush] 出参: 无已发送句子，可用字数={available}")
+            truncated = _take_text_by_units(rest, available)
             return truncated, "", True
         else:
+            print(f"[DEBUG _flush] 出参: 部分发送 {len(emitted_parts)} 个句子，剩余长度={len(rest)}")
             return "".join(emitted_parts), rest, True
 
+    print(f"[DEBUG _flush] 出参: 正常返回，已发送句子={len(emitted_parts)}, 剩余长度={len(rest)}")
     return "".join(emitted_parts), rest, False
 
 

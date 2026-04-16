@@ -63,12 +63,15 @@ def build_round_plan(
     current_word_count: int,
     round_index: int,
 ) -> ContinuationRoundPlan:
+    print(f"[DEBUG build_round_plan] 入参: current_word_count={current_word_count}, round_index={round_index}, target={getattr(request, 'target_word_count', None)}, max_tokens={getattr(request, 'max_tokens', None)}")
     mode = normalize_word_control_mode(request)
     target_word_count = getattr(request, "target_word_count", None)
     remaining_word_count = _resolve_remaining_word_count(request, current_word_count)
     max_rounds = _estimate_round_cap(mode, target_word_count, current_word_count)
+    print(f"[DEBUG build_round_plan] 基础参数: mode={mode}, target_word_count={target_word_count}, remaining_word_count={remaining_word_count}, max_rounds={max_rounds}")
 
     if mode == "prompt_only":
+        print(f"[DEBUG build_round_plan] 模式=prompt_only，直接返回单轮计划")
         return ContinuationRoundPlan(
             mode=mode,
             round_index=1,
@@ -86,7 +89,8 @@ def build_round_plan(
 
     rounds_left = max(1, max_rounds - round_index + 1)
     effective_remaining = remaining_word_count if remaining_word_count > 0 else 280
-    close_mode = effective_remaining <= 1000 or rounds_left <= 3
+    close_mode = effective_remaining <= 0  # [MODIFIED] 只有剩余为0时才close，否则全部用advance均匀分配
+    print(f"[DEBUG build_round_plan] 多轮模式: rounds_left={rounds_left}, effective_remaining={effective_remaining}, close_mode={close_mode}")
 
     if close_mode:
         suggested_word_count = _plan_close_suggestion(
@@ -94,20 +98,27 @@ def build_round_plan(
             rounds_left=rounds_left,
         )
         is_final_round = rounds_left == 1
+        print(f"[DEBUG build_round_plan] close_mode策略: suggested_word_count={suggested_word_count}, is_final_round={is_final_round}")
     else:
-        advance_rounds_left = max(min(rounds_left - 3, 2), 1)
+        advance_rounds_left = rounds_left  # [MODIFIED] 均匀分配给所有轮次
         suggested_word_count = _plan_advance_suggestion(
             remaining_word_count=effective_remaining,
             advance_rounds_left=advance_rounds_left,
         )
-        is_final_round = False
+        is_final_round = (rounds_left == 1)  # [MODIFIED] 只有rounds_left=1才是最终轮
+        print(f"[DEBUG build_round_plan] advance_mode策略: advance_rounds_left={advance_rounds_left}, suggested_word_count={suggested_word_count}, is_final_round={is_final_round}")
 
     max_tokens = _resolve_round_max_tokens(request.max_tokens, suggested_word_count, mode)
+    print(f"[DEBUG build_round_plan] max_tokens计算: request.max_tokens={request.max_tokens}, suggested_word_count={suggested_word_count}, 结果={max_tokens}")
+
     hard_word_limit = None if is_final_round else _resolve_round_hard_limit(
         suggested_word_count=suggested_word_count,
         remaining_word_count=effective_remaining,
         mode=mode,
     )
+    print(f"[DEBUG build_round_plan] hard_word_limit: is_final_round={is_final_round}, 结果={hard_word_limit}")
+
+    print(f"[DEBUG build_round_plan] 出参: round_index={round_index}, max_rounds={max_rounds}, rounds_left={rounds_left}, suggested_word_count={suggested_word_count}, hard_word_limit={hard_word_limit}")
     return ContinuationRoundPlan(
         mode=mode,
         round_index=round_index,
@@ -183,19 +194,21 @@ def build_budget_hint_text(
 
     if plan.target_word_count is not None:
         lines.append(f"- 目标总字数：{plan.target_word_count} 字")
-    if plan.remaining_word_count is not None:
-        lines.append(f"- 剩余字数：约 {max(plan.remaining_word_count, 0)} 字")
+    # if plan.remaining_word_count is not None:
+    #     lines.append(f"- 剩余字数：约 {max(plan.remaining_word_count, 0)} 字")
     if plan.mode != "prompt_only":
         if plan.is_final_round:
-            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍（收尾节拍），本轮将处理本章最后一个节拍，并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
+            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍（收尾节拍），本轮将处理本章最后一个节拍，请忽略字数限制，确保所有重点都被充分展开，并配以完美的结尾， 并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
         elif plan.round_index == 1:
-            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，这是本章第一节约，需要承接上一话最后一个节拍的正文结尾，并参考第 {plan.round_index} 节拍的动作和潜文本动作。确保转场自然、情绪连贯")
+            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，这是本章第{plan.round_index} 节拍(beat_id:{plan.round_index} )，需要承接上一话最后一个节拍的正文结尾，并参考第 {plan.round_index} 节拍的动作和潜文本动作。确保转场自然、情绪连贯")
         else:
-            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，本轮将处理本章第 {plan.round_index} 节拍，并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
+            lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，本轮将处理本章第 {plan.round_index} 节拍(beat_id:{plan.round_index} )，并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
     if plan.suggested_word_count is not None and plan.mode != "prompt_only":
         lines.append(f"- 本轮建议规模：约 {plan.suggested_word_count} 字")
+        # lines.append(f"- 本轮建议规模：约 800 字")
     if plan.hard_word_limit is not None:
         lines.append(f"- 本轮硬上限：约 {plan.hard_word_limit} 字（超出会提前停轮）")
+        # lines.append(f"- 本轮硬上限：约 800 字（超出会提前停轮）")
 
     guidance = (continuation_guidance or "").strip()
     if guidance:
@@ -214,6 +227,15 @@ def build_budget_hint_text(
 
     if plan.mode != "prompt_only" and plan.is_final_round:
         lines.append("- 这是最后一轮：请只做结尾收束，严控字数，不要开启新支线，不要明显超出预算；结尾要自然，并保留余味或轻微悬念。")
+
+    # [NEW] 节拍写作协议
+    if plan.mode != "prompt_only":
+        lines.append("")
+        lines.append("【节拍写作协议】")
+        lines.append("1. 严格按本轮节拍范围写作，不得跨节拍提前写下一节拍内容")
+        lines.append("2. 当本轮字数达到上限或节拍内容完成时，必须输出 <节拍完成> 标记")
+        lines.append("3. 标记出现后立即停止输出，等待下一轮指令")
+        lines.append("4. <节拍完成> 标记仅作为结束信号，不会出现在正文中")
 
     return "\n".join(lines).strip()
 
@@ -320,7 +342,7 @@ def _estimate_round_count_from_remaining(mode: str, remaining_word_count: int) -
     if remaining_word_count <= 0:
         return 1
 
-    return 3 if remaining_word_count <= 1000 else 5
+    return 3 if remaining_word_count <= 1000 else 4
 
 
 def _estimate_round_cap(
@@ -333,7 +355,7 @@ def _estimate_round_cap(
 
     target = target_word_count or current_word_count or 4000
 
-    return 3 if target <= 1000 else 5
+    return 3 if target <= 1000 else 4
 
 
 def _plan_advance_suggestion(
@@ -341,7 +363,8 @@ def _plan_advance_suggestion(
     remaining_word_count: int,
     advance_rounds_left: int,
 ) -> int:
-    advance_budget = max(remaining_word_count - 1000, 0)
+    # [MODIFIED] 均匀分配全部剩余字数，不再预留1000
+    advance_budget = remaining_word_count
     suggestion = ceil(advance_budget / max(1, advance_rounds_left))
     upper = 2200
     lower = 220
