@@ -334,11 +334,6 @@ async def generate_continuation_streaming(
 
         round_text = "".join(round_chunks)
 
-        # [SIMPLE FIX] 移除 <节拍完成> 标记，防止逃逸到正文
-        round_text = round_text.replace("<节拍完成>", "")
-        round_text = round_text.replace("......", "")
-        round_text = round_text.replace("……", "")
-
         if not round_text.strip():
             logger.warning("续写预算运行时在第 {} 轮拿到空输出，提前结束。", round_index)
             break
