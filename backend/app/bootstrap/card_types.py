@@ -292,7 +292,11 @@ def create_default_card_types(session: Session) -> None:
             "editor_component": "GlossaryEditor",
             "is_ai_enabled": False,
             "is_singleton": False,
-            "default_ai_context_template": None,
+            "default_ai_context_template": (
+                "作品标签: @作品标签.content\n"
+                "故事大纲概述: @故事大纲.content.overview\n"
+                "目标读者: @作品标签.content.audience"
+            ),
         },
     }
 

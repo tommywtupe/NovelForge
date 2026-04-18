@@ -25,6 +25,7 @@ export interface GlossaryTermExtractionRequest {
   project_id: number
   target_language: '繁體中文' | '日文' | '英文' | '韓文'
   glossary_card_id?: number
+  llm_config_id?: number
   update_mode: UpdateMode
 }
 
@@ -66,6 +67,37 @@ export async function updateGlossaryTerms(
 /** 删除术语表 */
 export async function deleteGlossary(glossaryCardId: number): Promise<{ success: boolean }> {
   return request.delete<{ success: boolean }>(`/glossary/${glossaryCardId}`)
+}
+
+/** 翻译术语表中的术语 */
+export interface TranslateTermsRequest {
+  terms: string[]
+  target_language: '繁體中文' | '日文' | '英文' | '韓文'
+  llm_config_id: number
+  glossary_card_id: number
+  project_id: number
+}
+
+export interface TranslateTermsResponse {
+  translations: { source: string; translated: string }[]
+}
+
+export async function translateGlossaryTerms(
+  terms: string[],
+  targetLanguage: '繁體中文' | '日文' | '英文' | '韓文',
+  llmConfigId: number,
+  glossaryCardId: number,
+  projectId: number
+): Promise<{ source: string; translated: string }[]> {
+  const req: TranslateTermsRequest = {
+    terms,
+    target_language: targetLanguage,
+    llm_config_id: llmConfigId,
+    glossary_card_id: glossaryCardId,
+    project_id: projectId,
+  }
+  const resp = await request.post<TranslateTermsResponse>('/glossary/translate-terms', req)
+  return resp.translations
 }
 
 /** 获取术语表的上下文字符串 */

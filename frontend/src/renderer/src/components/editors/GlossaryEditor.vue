@@ -161,6 +161,10 @@
 				<el-icon class="is-loading" :size="24"><Loading /></el-icon>
 				<span>正在{{ updateStatus }}...</span>
 			</div>
+			<div v-else-if="translating" class="update-progress">
+				<el-icon class="is-loading" :size="24"><Loading /></el-icon>
+				<span>正在翻译术语...</span>
+			</div>
 			<div v-else-if="updateResult" class="update-result">
 				<el-result
 					icon="success"
@@ -177,7 +181,7 @@
 			</div>
 			<template #footer>
 				<el-button @click="updateDialogVisible = false">关闭</el-button>
-				<el-button v-if="updateResult?.new_terms_count && updateResult.new_terms_count > 0" type="primary" @click="handleTranslateNewTerms">
+				<el-button v-if="updateResult?.new_terms_count && updateResult.new_terms_count > 0" type="primary" @click="handleTranslateNewTerms" :loading="translating">
 					翻译新术语
 				</el-button>
 			</template>
@@ -197,6 +201,7 @@ import {
 	extractAndUpdateGlossary,
 	updateGlossaryTerms,
 	deleteGlossary,
+	translateGlossaryTerms,
 	buildGlossaryContext,
 	type GlossaryTerm,
 	type UpdateMode,
@@ -234,6 +239,7 @@ const updateLoading = ref(false)
 const updateStatus = ref('')
 const updateResult = ref<any>(null)
 const pendingTerms = ref<GlossaryTerm[]>([])
+const translating = ref(false)
 
 const newTerm = reactive<GlossaryTerm>({
 	source: '',
@@ -364,6 +370,8 @@ async function handleUpdateMode(mode: UpdateMode) {
 		return
 	}
 
+	const llmConfigId = projectStore.currentProject?.llm_config_id
+
 	updateDialogVisible.value = true
 	updateLoading.value = true
 	updateResult.value = null
@@ -374,32 +382,92 @@ async function handleUpdateMode(mode: UpdateMode) {
 			project_id: projectStore.currentProject.id,
 			target_language: localContent.target_language as any,
 			glossary_card_id: props.card.id,
+			llm_config_id: llmConfigId,
 			update_mode: mode,
 		})
 
 		updateResult.value = result
 
-		// 重新加载术语表
-		if (mode === 'scan_and_translate' || mode === 'full_rebuild_translations') {
+		// 根据不同模式处理返回结果
+		if (mode === 'scan_new_concepts') {
+			// 仅检测新概念 - 从后端重新加载完整术语表
 			const cards = await listGlossaries(projectStore.currentProject.id, localContent.target_language)
 			const updatedCard = cards.find((c: any) => c.id === props.card.id)
 			if (updatedCard) {
 				localContent.terms = updatedCard.content?.terms || []
 			}
-		} else if (mode === 'scan_new_concepts' || mode === 'translate_new_concepts') {
-			// 仅当返回的新术语列表有内容时才更新，避免覆盖已有术语
-			if (result.terms && result.terms.length > 0) {
-				localContent.terms = result.terms
+		} else if (mode === 'translate_new_concepts') {
+			// 仅为新概念更新翻译 - 后端已完成翻译，重新加载完整术语表
+			const cards = await listGlossaries(projectStore.currentProject.id, localContent.target_language)
+			const updatedCard = cards.find((c: any) => c.id === props.card.id)
+			if (updatedCard) {
+				localContent.terms = updatedCard.content?.terms || []
+			}
+		} else if (mode === 'scan_and_translate' || mode === 'full_rebuild_translations') {
+			// 检测并翻译 / 全量重建翻译 - 从后端重新加载完整术语表（包含翻译结果）
+			const cards = await listGlossaries(projectStore.currentProject.id, localContent.target_language)
+			const updatedCard = cards.find((c: any) => c.id === props.card.id)
+			if (updatedCard) {
+				localContent.terms = updatedCard.content?.terms || []
 			}
 		}
 
 		pendingTerms.value = localContent.terms.filter((t: GlossaryTerm) => !t.translated)
+
+		// 如果有自动翻译完成，关闭对话框
+		if (mode !== 'scan_new_concepts') {
+			updateDialogVisible.value = false
+		}
 	} catch (e) {
 		console.error('Update glossary failed:', e)
 		ElMessage.error('更新术语表失败')
 		updateResult.value = { glossary_card_id: null }
 	} finally {
 		updateLoading.value = false
+	}
+}
+
+async function performTranslation() {
+	if (pendingTerms.value.length === 0) {
+		return
+	}
+
+	const llmConfigId = projectStore.currentProject?.llm_config_id
+	if (!llmConfigId) {
+		ElMessage.error('请先设置有效的模型ID')
+		return
+	}
+
+	try {
+		const termsToTranslate = pendingTerms.value.map((t: GlossaryTerm) => t.source)
+		const translations = await translateGlossaryTerms(
+			termsToTranslate,
+			localContent.target_language as '繁體中文' | '日文' | '英文' | '韓文',
+			llmConfigId,
+			props.card.id,
+			projectStore.currentProject.id
+		)
+
+		// 更新术语的 translated 字段
+		const translatedMap = new Map(translations.map(t => [t.source, t.translated]))
+		for (const term of localContent.terms) {
+			if (!term.translated && translatedMap.has(term.source)) {
+				term.translated = translatedMap.get(term.source)
+			}
+		}
+
+		// 触发响应式更新
+		localContent.terms = [...localContent.terms]
+
+		// 保存更新
+		await handleSave()
+		pendingTerms.value = localContent.terms.filter((t: GlossaryTerm) => !t.translated)
+
+		ElMessage.success(`翻译完成！${translations.length} 个术语已翻译`)
+	} catch (e) {
+		console.error('Translation failed:', e)
+		ElMessage.error('翻译失败')
+		throw e
 	}
 }
 
@@ -413,11 +481,27 @@ function getUpdateStatusText(mode: UpdateMode): string {
 	return statusMap[mode] || '处理中'
 }
 
-function handleTranslateNewTerms() {
-	// 触发翻译流程
-	updateDialogVisible.value = false
-	// TODO: 调用翻译服务翻译待翻译的术语
-	ElMessage.info('翻译功能开发中')
+async function handleTranslateNewTerms() {
+	if (pendingTerms.value.length === 0) {
+		ElMessage.warning('没有待翻译的术语')
+		return
+	}
+
+	const llmConfigId = projectStore.currentProject?.llm_config_id
+	if (!llmConfigId) {
+		ElMessage.error('请先设置有效的模型ID')
+		return
+	}
+
+	translating.value = true
+
+	try {
+		await performTranslation()
+		// 翻译完成后关闭对话框
+		updateDialogVisible.value = false
+	} finally {
+		translating.value = false
+	}
 }
 
 function openSourceCard(cardId: number) {

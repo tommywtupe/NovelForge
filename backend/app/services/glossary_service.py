@@ -265,6 +265,189 @@ def update_glossary_from_extraction(
     )
 
 
+async def translate_pending_glossary_terms(
+    session: Session,
+    request: GlossaryTermExtractionRequest,
+) -> GlossaryTermExtractionResponse:
+    """仅为术语表中未翻译的项进行AI翻译（不扫描新概念）
+
+    1. 获取现有术语表
+    2. 找出 translated 为空的项
+    3. 调用 AI 翻译
+    4. 更新术语表并返回结果
+    """
+    from app.services import llm_config_service
+
+    # 获取 LLM 配置
+    llm_config_id = request.llm_config_id
+    if not llm_config_id:
+        configs = llm_config_service.get_llm_configs(session)
+        if configs:
+            llm_config_id = configs[0].id
+        else:
+            raise ValueError("未找到可用的 LLM 配置")
+
+    # 获取术语表卡片
+    glossary_card = get_or_create_glossary_card(
+        session, request.project_id, request.target_language
+    )
+
+    if not glossary_card or not glossary_card.content:
+        return GlossaryTermExtractionResponse(
+            terms=[],
+            new_terms_count=0,
+            updated_terms_count=0,
+            removed_terms_count=0,
+            glossary_card_id=glossary_card.id if glossary_card else 0,
+        )
+
+    content = glossary_card.content
+    if isinstance(content, str):
+        import json
+        content = json.loads(content)
+
+    if not content.get("terms"):
+        return GlossaryTermExtractionResponse(
+            terms=[GlossaryTerm(**t) for t in content.get("terms", [])],
+            new_terms_count=0,
+            updated_terms_count=0,
+            removed_terms_count=0,
+            glossary_card_id=glossary_card.id,
+        )
+
+    # 找出未翻译的术语
+    terms_to_translate = [t for t in content["terms"] if not t.get("translated")]
+    if not terms_to_translate:
+        # 没有需要翻译的项
+        return GlossaryTermExtractionResponse(
+            terms=[GlossaryTerm(**t) for t in content["terms"]],
+            new_terms_count=0,
+            updated_terms_count=0,
+            removed_terms_count=0,
+            glossary_card_id=glossary_card.id,
+        )
+
+    # 调用 AI 翻译
+    source_terms = [t["source"] for t in terms_to_translate]
+    translations = await translate_glossary_terms(
+        session=session,
+        terms=source_terms,
+        target_language=request.target_language,
+        llm_config_id=llm_config_id,
+        glossary_card_id=glossary_card.id,
+        project_id=request.project_id,
+    )
+
+    # 构建翻译映射并更新术语
+    translated_map = {t["source"]: t["translated"] for t in translations}
+    translated_count = 0
+    for term in content["terms"]:
+        source = term.get("source")
+        if not term.get("translated") and source in translated_map:
+            term["translated"] = translated_map[source]
+            translated_count += 1
+
+    # 保存更新后的术语表
+    glossary_card.content = content
+    session.add(glossary_card)
+    session.commit()
+
+    # 返回更新后的结果
+    return GlossaryTermExtractionResponse(
+        terms=[GlossaryTerm(**t) for t in content["terms"]],
+        new_terms_count=0,
+        updated_terms_count=translated_count,
+        removed_terms_count=0,
+        glossary_card_id=glossary_card.id,
+    )
+
+
+async def extract_and_translate_glossary_terms(
+    session: Session,
+    request: GlossaryTermExtractionRequest,
+) -> GlossaryTermExtractionResponse:
+    """提取并翻译术语（异步版本）
+
+    1. 先调用提取接口更新术语表
+    2. 如果需要翻译（scan_and_translate 或 full_rebuild_translations），则调用 AI 翻译
+    3. 更新术语表卡片中的翻译字段
+    """
+    from app.services import llm_config_service
+
+    # 先执行提取（同步操作）
+    extraction_result = update_glossary_from_extraction(session, request)
+
+    # 检查是否需要翻译
+    needs_translation = request.update_mode in [
+        "scan_and_translate",
+        "full_rebuild_translations",
+        "translate_new_concepts",
+    ]
+    if not needs_translation:
+        return extraction_result
+
+    # 获取 LLM 配置
+    llm_config_id = request.llm_config_id
+    if not llm_config_id:
+        # 尝试获取项目的默认 LLM 配置
+        configs = llm_config_service.get_llm_configs(session)
+        if configs:
+            llm_config_id = configs[0].id
+        else:
+            raise ValueError("未找到可用的 LLM 配置")
+
+    # 获取需要翻译的术语（translated 为空的术语）
+    glossary_card = session.get(Card, extraction_result.glossary_card_id)
+    if not glossary_card or not glossary_card.content:
+        return extraction_result
+
+    content = glossary_card.content
+    if isinstance(content, str):
+        import json
+        content = json.loads(content)
+
+    if not content.get("terms"):
+        return extraction_result
+
+    terms_to_translate = [t for t in content["terms"] if not t.get("translated")]
+    if not terms_to_translate:
+        return extraction_result
+
+    # 调用 AI 翻译
+    source_terms = [t["source"] for t in terms_to_translate]
+    translations = await translate_glossary_terms(
+        session=session,
+        terms=source_terms,
+        target_language=request.target_language,
+        llm_config_id=llm_config_id,
+        glossary_card_id=glossary_card.id,
+        project_id=request.project_id,
+    )
+
+    # 构建翻译映射并更新术语
+    translated_map = {t["source"]: t["translated"] for t in translations}
+    translated_count = 0
+    for term in content["terms"]:
+        source = term.get("source")
+        if not term.get("translated") and source in translated_map:
+            term["translated"] = translated_map[source]
+            translated_count += 1
+
+    # 保存更新后的术语表
+    glossary_card.content = content
+    session.add(glossary_card)
+    session.commit()
+
+    # 返回更新后的结果
+    return GlossaryTermExtractionResponse(
+        terms=[GlossaryTerm(**t) for t in content["terms"]],
+        new_terms_count=extraction_result.new_terms_count,
+        updated_terms_count=translated_count,
+        removed_terms_count=extraction_result.removed_terms_count,
+        glossary_card_id=glossary_card.id,
+    )
+
+
 def get_project_glossaries(
     session: Session,
     project_id: int,
@@ -336,3 +519,209 @@ def delete_glossary(session: Session, glossary_card_id: int) -> bool:
     session.delete(glossary_card)
     session.commit()
     return True
+
+
+def get_project_context_for_translation(
+    session: Session,
+    project_id: int,
+) -> dict:
+    """获取项目上下文信息用于术语翻译
+
+    Args:
+        session: 数据库会话
+        project_id: 项目ID
+
+    Returns:
+        包含 tags_content, audience, story_overview 的字典
+    """
+    import json
+
+    # 获取作品标签卡片
+    tags_statement = (
+        select(Card)
+        .join(CardType, Card.card_type_id == CardType.id)
+        .where(Card.project_id == project_id)
+        .where(CardType.name == "作品标签")
+    )
+    tags_card = session.exec(tags_statement).first()
+
+    tags_content = ""
+    audience = "通用"
+    if tags_card and tags_card.content:
+        content = tags_card.content
+        if isinstance(content, str):
+            content = json.loads(content)
+        # 解析 Tags schema
+        try:
+            from app.schemas.wizard import Tags
+            tags_data = Tags(**content)
+            # 构建标签内容字符串
+            tag_parts = []
+            if tags_data.theme:
+                tag_parts.append(f"主题类别: {tags_data.theme}")
+            if tags_data.story_tags:
+                tag_strs = [f"{t[0]}({t[1]})" for t in tags_data.story_tags]
+                tag_parts.append(f"故事标签: {', '.join(tag_strs)}")
+            if tags_data.affection:
+                tag_parts.append(f"情感标签: {tags_data.affection}")
+            if tags_data.narrative_person:
+                tag_parts.append(f"写作人称: {tags_data.narrative_person}")
+            tags_content = "\n".join(tag_parts) if tag_parts else "未设置"
+            audience = tags_data.audience or "通用"
+        except Exception:
+            tags_content = str(content)
+
+    # 获取故事大纲卡片
+    overview_statement = (
+        select(Card)
+        .join(CardType, Card.card_type_id == CardType.id)
+        .where(Card.project_id == project_id)
+        .where(CardType.name == "故事大纲")
+    )
+    overview_card = session.exec(overview_statement).first()
+
+    story_overview = ""
+    if overview_card and overview_card.content:
+        content = overview_card.content
+        if isinstance(content, str):
+            content = json.loads(content)
+        # 解析 ParagraphOverview schema
+        try:
+            from app.schemas.wizard import ParagraphOverview
+            overview_data = ParagraphOverview(**content)
+            story_overview = overview_data.overview or ""
+        except Exception:
+            story_overview = str(content)
+
+    return {
+        "tags_content": tags_content or "未设置",
+        "audience": audience,
+        "story_overview": story_overview or "未设置",
+    }
+
+
+async def translate_glossary_terms(
+    session: Session,
+    terms: List[str],
+    target_language: str,
+    llm_config_id: int,
+    glossary_card_id: int,
+    project_id: int,
+) -> List[dict]:
+    """翻译术语表中的术语
+
+    Args:
+        session: 数据库会话
+        terms: 待翻译的术语列表
+        target_language: 目标语言
+        llm_config_id: LLM配置ID
+        glossary_card_id: 术语表卡片ID
+        project_id: 项目ID（用于获取作品背景上下文）
+
+    Returns:
+        翻译结果列表，每项包含 source 和 translated
+    """
+    from app.services import prompt_service
+    from app.services.ai.core.chat_model_factory import build_chat_model
+    from app.services.ai.core.token_utils import calc_input_tokens, estimate_tokens
+    from app.services.ai.core.quota_manager import record_usage
+    from langchain_core.messages import HumanMessage, SystemMessage
+    import re
+
+    if not terms:
+        return []
+
+    # 1. 加载术语翻译 prompt
+    prompt = prompt_service.get_prompt_by_name(session, "术语翻译")
+    if not prompt or not prompt.template:
+        raise ValueError("未找到术语翻译提示词模板")
+
+    raw_prompt = str(prompt.template)
+
+    # 2. 获取项目上下文
+    project_context = get_project_context_for_translation(session, project_id)
+
+    # 3. 渲染 prompt 模板
+    system_prompt = prompt_service.inject_knowledge(session, raw_prompt)
+    # 使用 render_prompt 渲染上下文变量
+    system_prompt = prompt_service.render_prompt(
+        system_prompt,
+        {
+            "tags_content": project_context["tags_content"],
+            "audience": project_context["audience"],
+            "story_overview": project_context["story_overview"],
+        }
+    )
+
+    # 4. 获取已有翻译用于保证一致性
+    glossary_card = session.get(Card, glossary_card_id)
+    existing_context = ""
+    if glossary_card and glossary_card.content:
+        content = glossary_card.content
+        if isinstance(content, str):
+            import json
+            content = json.loads(content)
+        if content.get("terms"):
+            try:
+                existing_glossary = TranslationGlossary(**content)
+                existing_context = build_glossary_context(existing_glossary.terms)
+            except Exception:
+                existing_context = ""
+
+    # 5. 构建用户提示词
+    terms_list_text = "\n".join(terms)
+    context_hint = f"（参考已有翻译：\n{existing_context}）" if existing_context else ""
+    user_prompt = f"""请将以下术语翻译为{target_language}：
+
+{terms_list_text}
+
+{context_hint}
+
+请直接输出翻译结果，每行一个，格式为：原文 → 译名"""
+
+    # 6. 调用 LLM
+    model = build_chat_model(
+        session=session,
+        llm_config_id=llm_config_id,
+        temperature=0.3,
+        max_tokens=4096,
+        timeout=120,
+    )
+
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt),
+    ]
+
+    response = await model.ainvoke(messages)
+    content = getattr(response, "content", response)
+    if isinstance(content, list):
+        text = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    else:
+        text = "" if content is None else str(content)
+
+    # 7. 记录 token 使用
+    try:
+        in_tokens = calc_input_tokens(system_prompt, user_prompt)
+        out_tokens = estimate_tokens(text)
+        record_usage(session, llm_config_id, in_tokens, out_tokens, calls=1, aborted=False)
+    except Exception:
+        pass  # 忽略统计错误
+
+    # 8. 解析翻译结果
+    translations = []
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if not line or "→" not in line:
+            continue
+        parts = line.split("→", 1)
+        if len(parts) == 2:
+            source = parts[0].strip()
+            translated = parts[1].strip()
+            if source and translated:
+                translations.append({"source": source, "translated": translated})
+
+    return translations

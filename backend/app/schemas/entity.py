@@ -203,6 +203,7 @@ class GlossaryTermExtractionRequest(BaseModel):
         description="目标语言"
     )
     glossary_card_id: Optional[int] = Field(default=None, description="现有术语表卡片ID，用于增量更新")
+    llm_config_id: Optional[int] = Field(default=None, description="LLM配置ID，用于自动翻译模式")
     update_mode: Literal[
         "scan_new_concepts",           # 仅检测新概念
         "translate_new_concepts",        # 仅为新概念更新翻译
@@ -218,3 +219,19 @@ class GlossaryTermExtractionResponse(BaseModel):
     updated_terms_count: int = Field(description="更新的术语数量")
     removed_terms_count: int = Field(description="删除的术语数量")
     glossary_card_id: int = Field(description="术语表卡片ID")
+
+
+class TranslateTermsRequest(BaseModel):
+    """术语翻译请求"""
+    terms: List[str] = Field(description="待翻译的术语列表（仅包含原文）")
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(
+        description="目标语言"
+    )
+    llm_config_id: int = Field(description="LLM配置ID")
+    glossary_card_id: int = Field(description="术语表卡片ID（用于获取已有翻译保证一致性）")
+    project_id: int = Field(description="项目ID（用于获取作品背景上下文）")
+
+
+class TranslateTermsResponse(BaseModel):
+    """术语翻译响应"""
+    translations: List[dict] = Field(description="翻译结果列表，每项包含 source 和 translated")
