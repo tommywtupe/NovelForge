@@ -60,6 +60,33 @@ wait_result = Logic.Wait(tasks=[outline_cards, content_cards])
 #</node>
 
 
+#@node(description="生成翻译卡片列表")
+translation_items = Logic.Expression(
+    expression="[{**{'title': card['title'] + '【繁體】', 'parent_id': card['id'], 'volume_number': (card.get('content') or {}).get('volume_number', 0), 'stage_number': (card.get('content') or {}).get('stage_number', 0), 'chapter_number': (card.get('content') or {}).get('chapter_number', 0), 'entity_list': (card.get('content') or {}).get('entity_list', [])}, 'target_language': '繁體中文', 'content': ''} for card in content_cards.cards] + [{**{'title': card['title'] + '【日文】', 'parent_id': card['id'], 'volume_number': (card.get('content') or {}).get('volume_number', 0), 'stage_number': (card.get('content') or {}).get('stage_number', 0), 'chapter_number': (card.get('content') or {}).get('chapter_number', 0), 'entity_list': (card.get('content') or {}).get('entity_list', [])}, 'target_language': '日文', 'content': ''} for card in content_cards.cards] + [{**{'title': card['title'] + '【英文】', 'parent_id': card['id'], 'volume_number': (card.get('content') or {}).get('volume_number', 0), 'stage_number': (card.get('content') or {}).get('stage_number', 0), 'chapter_number': (card.get('content') or {}).get('chapter_number', 0), 'entity_list': (card.get('content') or {}).get('entity_list', [])}, 'target_language': '英文', 'content': ''} for card in content_cards.cards] + [{**{'title': card['title'] + '【韓文】', 'parent_id': card['id'], 'volume_number': (card.get('content') or {}).get('volume_number', 0), 'stage_number': (card.get('content') or {}).get('stage_number', 0), 'chapter_number': (card.get('content') or {}).get('chapter_number', 0), 'entity_list': (card.get('content') or {}).get('entity_list', [])}, 'target_language': '韓文', 'content': ''} for card in content_cards.cards]"
+  )
+#</node>
+
+
+#@node(async=true, description="批量创建翻译卡片（异步）")
+translation_cards = Card.BatchUpsert(
+    project_id=trigger.project_id,
+    parent_id="{item.parent_id}",
+    card_type="正文翻译卡",
+    title_template="{item.title}",
+    content_template={
+      "volume_number": "{item.volume_number}",
+      "stage_number": "{item.stage_number}",
+      "chapter_number": "{item.chapter_number}",
+      "title": "{item.title}",
+      "target_language": "{item.target_language}",
+      "entity_list": "{item.entity_list}",
+      "content": "{item.content}"
+    },
+    items=translation_items.result
+  )
+#</node>
+
+
 #@node(description="清空大纲列表")
 update_result = Card.Update(
     card_id=trigger.card_id,

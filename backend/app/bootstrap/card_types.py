@@ -273,6 +273,20 @@ def create_default_card_types(session: Session) -> None:
         "组织卡": {"default_ai_context_template": None},
         "物品卡": {"default_ai_context_template": None, "is_ai_enabled": False},
         "概念卡": {"default_ai_context_template": None, "is_ai_enabled": False},
+        "正文翻译卡": {
+            "editor_component": "TransCodeMirrorEditor",
+            "is_ai_enabled": True,
+            "default_ai_context_template": (
+                "【待翻译章节信息】\n"
+                "章节标题: @parent.content.title\n"
+                "卷号: @parent.content.volume_number\n"
+                "阶段号: @parent.content.stage_number\n"
+                "章节序号: @parent.content.chapter_number\n"
+                "\n"
+                "【原文正文】\n"
+                "@parent.content.content\n"
+            ),
+        },
         "文件夹": {"is_singleton": False, "is_ai_enabled": False, "default_ai_context_template": None},
     }
 
@@ -294,6 +308,7 @@ def create_default_card_types(session: Session) -> None:
         "组织卡": {"prompt_name": "关系提取", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
         "物品卡": None,
         "概念卡": None,
+        "正文翻译卡": {"prompt_name": "正文翻译", "temperature": 0.3, "max_tokens": 8192, "timeout": 120},
     }
 
     # 类型名称到内置响应模型的映射（直接用于生成 json_schema）
@@ -316,6 +331,7 @@ def create_default_card_types(session: Session) -> None:
         "组织卡": "OrganizationCard",
         "物品卡": "ItemCard",
         "概念卡": "ConceptCard",
+        "正文翻译卡": "TranslationChapter",
         "文件夹": "Text",
     }
 

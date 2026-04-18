@@ -244,5 +244,19 @@ class Chapter(BaseModel):
         description="章节中参与的重要实体列表，只能从提供的实体中选择；name 必须是纯名称（不得包含括号/备注）",
     )
     content:Optional[str]=Field(default="",description="章节正文内容")
-    
 
+
+class TranslationChapter(BaseModel):
+    """正文翻译卡 - 将父系章节正文翻译为指定语言"""
+    volume_number: int = Field(description="卷号，如果没有找到，则设置为0")
+    stage_number: int = Field(description="该章节属于第几个阶段，从1开始")
+    title: str = Field(description="翻译后的章节标题")
+    chapter_number: int = Field(description="章节序号")
+
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(
+        description="目标翻译语言"
+    )
+    entity_list: List[str] = Field(
+        description="章节中参与的重要实体列表，翻译时保持原文",
+    )
+    content: Optional[str] = Field(default="", description="翻译后的章节正文内容")
