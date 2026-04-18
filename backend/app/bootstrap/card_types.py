@@ -288,6 +288,12 @@ def create_default_card_types(session: Session) -> None:
             ),
         },
         "文件夹": {"is_singleton": False, "is_ai_enabled": False, "default_ai_context_template": None},
+        "翻译术语表": {
+            "editor_component": "GlossaryEditor",
+            "is_ai_enabled": False,
+            "is_singleton": False,
+            "default_ai_context_template": None,
+        },
     }
 
     # 类型默认 AI 参数预设（不包含 llm_config_id）
@@ -309,6 +315,7 @@ def create_default_card_types(session: Session) -> None:
         "物品卡": None,
         "概念卡": None,
         "正文翻译卡": {"prompt_name": "正文翻译", "temperature": 0.3, "max_tokens": 8192, "timeout": 120},
+        "翻译术语表": None,
     }
 
     # 类型名称到内置响应模型的映射（直接用于生成 json_schema）

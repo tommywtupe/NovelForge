@@ -5,6 +5,7 @@ from app.api.endpoints import assistant as assistant_ep
 from app.api.endpoints import chapter_reviews as chapter_reviews_ep
 from app.api.endpoints import context as context_ep
 from app.api.endpoints import foreshadow as foreshadow_ep
+from app.api.endpoints import glossary as glossary_ep
 from app.api.endpoints import knowledge as knowledge_ep
 from app.api.endpoints import memory as memory_ep
 from app.api.endpoints import relation_graph as relation_graph_ep
@@ -29,3 +30,4 @@ api_router.include_router(relation_graph_ep.router, prefix="/relation-graph", ta
 api_router.include_router(foreshadow_ep.router, prefix="/foreshadow", tags=["foreshadow"])
 api_router.include_router(knowledge_ep.router, prefix="/knowledge", tags=["knowledge"])
 api_router.include_router(workflows_ep.router, tags=["workflows"])
+api_router.include_router(glossary_ep.router, prefix="/glossary", tags=["glossary"])

@@ -279,6 +279,7 @@ const contentEditorMap: Record<string, any> = {
   CodeMirrorEditor: defineAsyncComponent(() => import('../editors/CodeMirrorEditor.vue')),
   MarkdownTextEditor: defineAsyncComponent(() => import('../editors/MarkdownTextEditor.vue')),
   TransCodeMirrorEditor: defineAsyncComponent(() => import('../editors/TransCodeMirrorEditor.vue')),
+  GlossaryEditor: defineAsyncComponent(() => import('../editors/GlossaryEditor.vue')),
   // 未来可以添加更多内容编辑器，例如：
   // RichTextEditor: defineAsyncComponent(() => import('../editors/RichTextEditor.vue')),
   // MarkdownEditor: defineAsyncComponent(() => import('../editors/MarkdownEditor.vue')),

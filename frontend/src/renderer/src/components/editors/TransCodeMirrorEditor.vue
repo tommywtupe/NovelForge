@@ -113,6 +113,22 @@
 						:value="lang.value"
 					/>
 				</el-select>
+
+				<el-select
+					v-model="selectedGlossaryId"
+					size="small"
+					placeholder="选择术语表"
+					class="glossary-select"
+					clearable
+					@change="handleGlossaryChange"
+				>
+					<el-option
+						v-for="glossary in glossaryOptions"
+						:key="glossary.id"
+						:label="glossary.title"
+						:value="glossary.id"
+					/>
+				</el-select>
 			</div>
 		</div>
 	</div>
@@ -187,6 +203,7 @@ import { useAppStore } from '@renderer/stores/useAppStore'
 import { type CardRead, type CardUpdate } from '@renderer/api/cards'
 import { generateContinuationStreaming, type ContinuationRequest, getAIConfigOptions, type AIConfigOptions } from '@renderer/api/ai'
 import { runReview, type QualityGate, type ReviewDraftResult } from '@renderer/api/chapterReviews'
+import { listGlossaries, buildGlossaryContext, type TranslationGlossaryContent } from '@renderer/api/glossary'
 import { getCardAIParams } from '@renderer/api/setting'
 import { ArrowDown, MagicStick, CircleClose, List, Timer, Select, Loading } from '@element-plus/icons-vue'
 import AIPerCardParams from '../common/AIPerCardParams.vue'
@@ -398,6 +415,66 @@ function handleTargetLanguageChange(lang: string) {
 	emit('update:dirty', true)
 }
 
+// 术语表相关
+interface GlossaryOption {
+	id: number
+	title: string
+	content: TranslationGlossaryContent
+}
+
+const glossaryOptions = ref<GlossaryOption[]>([])
+const selectedGlossaryId = ref<number | null>(null)
+const selectedGlossary = ref<TranslationGlossaryContent | null>(null)
+
+async function loadGlossaries() {
+	if (!projectStore.currentProject?.id) {
+		glossaryOptions.value = []
+		return
+	}
+
+	try {
+		const targetLang = (localCard.content as any)?.target_language
+		const cards = await listGlossaries(projectStore.currentProject.id, targetLang)
+		glossaryOptions.value = cards.map((c: any) => ({
+			id: c.id,
+			title: c.title || (c.content?.name) || '未命名术语表',
+			content: c.content || {},
+		}))
+
+		// 自动选择与当前目标语言匹配的术语表
+		if (selectedGlossaryId.value === null && glossaryOptions.value.length > 0) {
+			// 优先选择当前语言的术语表
+			const match = glossaryOptions.value.find(g => g.content.target_language === targetLang)
+			if (match) {
+				selectedGlossaryId.value = match.id
+				selectedGlossary.value = match.content
+			}
+		}
+	} catch (e) {
+		console.error('Failed to load glossaries:', e)
+		glossaryOptions.value = []
+	}
+}
+
+function handleGlossaryChange(glossaryId: number | null) {
+	if (!glossaryId) {
+		selectedGlossary.value = null
+		return
+	}
+
+	const glossary = glossaryOptions.value.find(g => g.id === glossaryId)
+	selectedGlossary.value = glossary?.content || null
+	isDirty.value = true
+	emit('update:dirty', true)
+}
+
+function getGlossaryContext(): string {
+	if (!selectedGlossary.value) {
+		return ''
+	}
+	return buildGlossaryContext(selectedGlossary.value)
+}
+
 function formatReviewVerdict(verdict?: QualityGate | null | string): string {
 	switch (verdict) {
 		case 'pass':
@@ -592,6 +669,13 @@ async function executeTranslation() {
 	if (resolvedContextTemplate) {
 		contextParts.push(`【翻译上下文】\n${resolvedContextTemplate}`)
 	}
+
+	// 添加术语表上下文
+	const glossaryContext = getGlossaryContext()
+	if (glossaryContext) {
+		contextParts.push(glossaryContext)
+	}
+
 	const contextInfoBlock = contextParts.join('\n\n')
 
 	const requestData: any = {
@@ -838,6 +922,9 @@ onMounted(async () => {
 		reviewPrompts.value = ['章节审核']
 	}
 
+	// 加载术语表
+	await loadGlossaries()
+
 	ready.value = true
 })
 
@@ -995,6 +1082,22 @@ watch(() => props.card?.content, (newContent) => {
 }
 
 .target-lang-select :deep(.el-input__inner) {
+	font-size: 12px;
+	color: var(--el-text-color-secondary);
+}
+
+.glossary-select {
+	width: 160px;
+}
+
+.glossary-select :deep(.el-input__wrapper) {
+	background: var(--el-fill-color-light);
+	border-radius: 999px;
+	padding-left: 10px;
+	padding-right: 10px;
+}
+
+.glossary-select :deep(.el-input__inner) {
 	font-size: 12px;
 	color: var(--el-text-color-secondary);
 }

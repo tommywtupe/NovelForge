@@ -173,3 +173,48 @@ class ConceptCard(Entity):
     counter_relations: List[str] = Field(default_factory=list, description="对立、克制或限制关系")
     mastery_hint: Optional[str] = Field(default=None, description="掌握门槛、领悟方式或常见使用者")
     known_by: List[str] = Field(default_factory=list, description="已知掌握、知晓或受影响的实体")
+
+
+class GlossaryTerm(BaseModel):
+    """翻译术语表中的单个术语"""
+    source: str = Field(description="原文")
+    translated: str = Field(description="翻译")
+    category: Literal["character", "scene", "organization", "item", "concept", "other"] = Field(
+        default="other", description="术语来源类别"
+    )
+    source_card_id: Optional[int] = Field(default=None, description="来源卡片ID，为空表示手动添加")
+    notes: Optional[str] = Field(default=None, description="备注说明")
+
+
+class TranslationGlossary(BaseModel):
+    """翻译术语表"""
+    name: str = Field(description="术语表名称")
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(
+        description="目标语言"
+    )
+    terms: List[GlossaryTerm] = Field(default_factory=list, description="术语列表")
+    updated_at: Optional[str] = Field(default=None, description="最后更新时间")
+
+
+class GlossaryTermExtractionRequest(BaseModel):
+    """术语提取请求"""
+    project_id: int = Field(description="项目ID")
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(
+        description="目标语言"
+    )
+    glossary_card_id: Optional[int] = Field(default=None, description="现有术语表卡片ID，用于增量更新")
+    update_mode: Literal[
+        "scan_new_concepts",           # 仅检测新概念
+        "translate_new_concepts",        # 仅为新概念更新翻译
+        "full_rebuild_translations",   # 全量重建翻译
+        "scan_and_translate"            # 同时检测新概念和自动完成后续翻译
+    ] = Field(default="scan_and_translate", description="更新模式")
+
+
+class GlossaryTermExtractionResponse(BaseModel):
+    """术语提取响应"""
+    terms: List[GlossaryTerm] = Field(description="提取的术语列表")
+    new_terms_count: int = Field(description="新增术语数量")
+    updated_terms_count: int = Field(description="更新的术语数量")
+    removed_terms_count: int = Field(description="删除的术语数量")
+    glossary_card_id: int = Field(description="术语表卡片ID")
