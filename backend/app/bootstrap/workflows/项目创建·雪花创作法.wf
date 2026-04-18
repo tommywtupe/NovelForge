@@ -59,3 +59,59 @@ blueprint = Card.Create(
     title="核心蓝图"
   )
 #</node>
+
+
+#@node(description="创建繁体中文术语表")
+glossary_zh_tw = Card.Create(
+    project_id=trigger.project_id,
+    card_type="翻译术语表",
+    title="术语表·繁體中文",
+    content={
+        "name": "术语表·繁體中文",
+        "target_language": "繁體中文",
+        "terms": []
+    }
+  )
+#</node>
+
+
+#@node(description="创建英文术语表")
+glossary_en = Card.Create(
+    project_id=trigger.project_id,
+    card_type="翻译术语表",
+    title="术语表·英文",
+    content={
+        "name": "术语表·英文",
+        "target_language": "英文",
+        "terms": []
+    }
+  )
+#</node>
+
+
+#@node(description="创建日文术语表")
+glossary_ja = Card.Create(
+    project_id=trigger.project_id,
+    card_type="翻译术语表",
+    title="术语表·日文",
+    content={
+        "name": "术语表·日文",
+        "target_language": "日文",
+        "terms": []
+    }
+  )
+#</node>
+
+
+#@node(description="创建韩文术语表")
+glossary_ko = Card.Create(
+    project_id=trigger.project_id,
+    card_type="翻译术语表",
+    title="术语表·韓文",
+    content={
+        "name": "术语表·韓文",
+        "target_language": "韓文",
+        "terms": []
+    }
+  )
+#</node>
