@@ -14,6 +14,12 @@
     4. Chapter titles must also be translated into English
     5. Output ONLY the translation results, without any explanations, comments, or prefaces
 
+    # Constraints
+    1. **Format Alignment**: Strictly preserve all line breaks, blank lines, and indentations from the original text.
+    2. **Punctuation Restoration**: Do not delete any punctuation marks. Use full-width punctuation for Chinese translations and half-width for English.
+    3. **No Paragraph Merging**: Do not merge multiple paragraphs into one.
+    4. **Markdown Preservation**: If the original text contains bolding, italics, lists, or headings, retain all corresponding Markdown tags.
+
 ---
 
 - Target Language Guidelines

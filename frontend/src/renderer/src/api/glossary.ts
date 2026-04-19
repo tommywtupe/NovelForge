@@ -56,12 +56,18 @@ export async function extractAndUpdateGlossary(
   return request.post<GlossaryTermExtractionResponse>('/glossary/extract', extractionRequest)
 }
 
-/** 更新术语表的术语 */
+/** 更新术语表的术语和元数据 */
 export async function updateGlossaryTerms(
   glossaryCardId: number,
-  terms: GlossaryTerm[]
+  terms: GlossaryTerm[],
+  name?: string,
+  target_language?: string
 ): Promise<TranslationGlossaryContent> {
-  return request.put<TranslationGlossaryContent>(`/glossary/${glossaryCardId}/terms`, terms)
+  return request.put<TranslationGlossaryContent>(`/glossary/${glossaryCardId}/terms`, {
+    terms,
+    name,
+    target_language,
+  })
 }
 
 /** 删除术语表 */
@@ -98,24 +104,4 @@ export async function translateGlossaryTerms(
   }
   const resp = await request.post<TranslateTermsResponse>('/glossary/translate-terms', req)
   return resp.translations
-}
-
-/** 获取术语表的上下文字符串 */
-export function buildGlossaryContext(glossary: TranslationGlossaryContent): string {
-  if (!glossary.terms || glossary.terms.length === 0) {
-    return ''
-  }
-
-  const lines: string[] = []
-  for (const term of glossary.terms) {
-    if (term.translated) {
-      lines.push(`${term.source} → ${term.translated}`)
-    }
-  }
-
-  if (lines.length === 0) {
-    return ''
-  }
-
-  return `【翻译术语表 - ${glossary.target_language}】\n${lines.join('\n')}\n\n请在翻译时优先使用上述术语表的翻译。`
 }

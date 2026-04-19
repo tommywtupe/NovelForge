@@ -147,6 +147,8 @@
 			<div class="title-meta">
 				<el-icon class="word-count-icon"><Timer /></el-icon>
 				<span class="word-count-text">{{ wordCount }} 字</span>
+				<span class="separator">|</span>
+				<span class="line-count-text">{{ lineCount }} 行</span>
 			</div>
 		</div>
 	</div>
@@ -203,7 +205,7 @@ import { useAppStore } from '@renderer/stores/useAppStore'
 import { type CardRead, type CardUpdate } from '@renderer/api/cards'
 import { generateContinuationStreaming, type ContinuationRequest, getAIConfigOptions, type AIConfigOptions } from '@renderer/api/ai'
 import { runReview, type QualityGate, type ReviewDraftResult } from '@renderer/api/chapterReviews'
-import { listGlossaries, buildGlossaryContext, type TranslationGlossaryContent } from '@renderer/api/glossary'
+import { listGlossaries, type TranslationGlossaryContent } from '@renderer/api/glossary'
 import { getCardAIParams } from '@renderer/api/setting'
 import { ArrowDown, MagicStick, CircleClose, List, Timer, Select, Loading } from '@element-plus/icons-vue'
 import AIPerCardParams from '../common/AIPerCardParams.vue'
@@ -211,7 +213,7 @@ import { resolveTemplate } from '@renderer/services/contextResolver'
 import { getCardContextTemplates, getContextTemplateByKind, normalizeContextTemplateKind, type ContextTemplateKind, type ContextTemplates } from '@renderer/services/contextSlots'
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
-import { EditorView, keymap, Decoration, DecorationSet } from '@codemirror/view'
+import { EditorView, keymap, Decoration, DecorationSet, lineNumbers } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, insertNewline } from '@codemirror/commands'
 
 const props = defineProps<{
@@ -285,6 +287,7 @@ const highlightField = StateField.define<DecorationSet>({
 const localCard = reactive({
 	...props.card,
 	content: {
+		...(props.card.content as any || {}),
 		content: typeof (props.card.content as any)?.content === 'string'
 			? (props.card.content as any).content
 			: '',
@@ -292,8 +295,7 @@ const localCard = reactive({
 			? (props.card.content as any).word_count
 			: 0,
 		title: (props.card.content as any)?.title ?? props.card.title ?? '',
-		target_language: (props.card.content as any)?.target_language ?? '',
-		...(props.card.content as any || {})
+		target_language: (props.card.content as any)?.target_language || '繁體中文',
 	}
 })
 
@@ -370,7 +372,12 @@ function computeWordCount(text: string): number {
 	return (text || '').replace(/\s+/g, '').length
 }
 
+function computeLineCount(text: string): number {
+	return ((text || '').match(/\n/g) || []).length + 1  // 行数 = 换行符数量 + 1
+}
+
 const wordCount = ref(0)
+const lineCount = ref(0)
 const aiLoading = ref(false)
 let streamHandle: { cancel: () => void } | null = null
 const canInterruptAiTask = computed(() => aiLoading.value || reviewLoading.value || Boolean(reviewAbortController.value))
@@ -394,7 +401,7 @@ const reviewDraft = ref<ReviewDraftResult | null>(null)
 const reviewAbortController = ref<AbortController | null>(null)
 
 // 字号/行距
-const fontSize = ref<number>(16)
+const fontSize = ref<number>(20)
 const lineHeight = ref<number>(1.8)
 const fontSizePx = computed(() => `${fontSize.value}px`)
 const lineHeightStr = computed(() => String(lineHeight.value))
@@ -466,13 +473,6 @@ function handleGlossaryChange(glossaryId: number | null) {
 	selectedGlossary.value = glossary?.content || null
 	isDirty.value = true
 	emit('update:dirty', true)
-}
-
-function getGlossaryContext(): string {
-	if (!selectedGlossary.value) {
-		return ''
-	}
-	return buildGlossaryContext(selectedGlossary.value)
 }
 
 function formatReviewVerdict(verdict?: QualityGate | null | string): string {
@@ -557,13 +557,16 @@ function handleTitleEnter() {
 
 async function handleSave(newTitle?: string) {
 	try {
-		// 如果传入了新标题，更新标题
-		const effectiveTitle = (typeof newTitle === 'string' && newTitle.trim())
+		// 优先使用传入的 newTitle（来自 titleProxy），确保保存用户输入的最新标题
+		// 如果 newTitle 为空或无效，则从 localCard.content.title 获取（这是 v-model 绑定的值）
+		const titleToSave = (typeof newTitle === 'string' && newTitle.trim())
 			? newTitle.trim()
-			: localCard.title
-		if (effectiveTitle && effectiveTitle !== localCard.title) {
-			localCard.title = effectiveTitle
-			localCard.content.title = effectiveTitle
+			: (localCard.content.title || localCard.title || props.card.title || '')
+
+		// 更新 localCard.title 和 localCard.content.title
+		if (titleToSave) {
+			localCard.title = titleToSave
+			localCard.content.title = titleToSave
 		}
 
 		const savedContent = {
@@ -571,11 +574,12 @@ async function handleSave(newTitle?: string) {
 			...localCard.content,
 			content: getText(),
 			word_count: wordCount.value,
-			title: effectiveTitle,
+			title: titleToSave,
+			target_language: localCard.content.target_language,
 		}
 
 		const updatePayload: CardUpdate = {
-			title: effectiveTitle,
+			title: titleToSave,
 			content: savedContent,
 			needs_confirmation: false,
 		}
@@ -611,10 +615,10 @@ function resolveSampling() {
 // 根据目标语言选择对应的翻译 prompt
 function getTranslationPromptName(targetLanguage: string | undefined): string {
 	const promptMap: Record<string, string> = {
-		'繁體中文': '正文翻译-繁体中文',
+		'繁體中文': '正文翻译-繁體中文',  // 使用繁体，与术语表 target_language 一致
 		'日文': '正文翻译-日文',
 		'英文': '正文翻译-英文',
-		'韓文': '正文翻译-韩文',
+		'韓文': '正文翻译-韓文',  // 使用繁体，与术语表 target_language 一致
 	}
 	return promptMap[targetLanguage || ''] || '正文翻译'
 }
@@ -665,25 +669,20 @@ async function executeTranslation() {
 		console.error('Failed to resolve context template:', e)
 	}
 
-	const contextParts: string[] = []
-	if (resolvedContextTemplate) {
-		contextParts.push(`【翻译上下文】\n${resolvedContextTemplate}`)
-	}
-
-	// 添加术语表上下文
-	const glossaryContext = getGlossaryContext()
-	if (glossaryContext) {
-		contextParts.push(glossaryContext)
-	}
-
-	const contextInfoBlock = contextParts.join('\n\n')
+	// 构建上下文信息
+	const contextInfoBlock = resolvedContextTemplate
+		? `【翻译上下文】\n${resolvedContextTemplate}`
+		: ''
 
 	const requestData: any = {
 		context_info: contextInfoBlock,
 		llm_config_id: llmConfigId,
 		stream: true,
 		prompt_name: promptName,
+		project_id: projectStore.currentProject?.id || (props.card as any)?.project_id,
 	}
+
+	// 后端会根据 prompt_name 自动进行术语表匹配，无需前端发送 glossary
 
 	const { temperature, max_tokens, timeout } = resolveSampling()
 	if (typeof temperature === 'number') requestData.temperature = temperature
@@ -744,6 +743,7 @@ function executeTranslationAIGeneration(requestData: any) {
 			if (body) {
 				setText(body)
 				wordCount.value = computeWordCount(body)
+				lineCount.value = computeLineCount(body)
 			}
 		} catch (e) {
 			console.error('Failed to process translation result:', e)
@@ -774,7 +774,9 @@ function appendAtEnd(text: string) {
 		changes: { from: end, to: end, insert: text },
 		selection: { anchor: end + text.length }
 	})
-	wordCount.value = computeWordCount(view.state.doc.toString())
+	const currentText = view.state.doc.toString()
+	wordCount.value = computeWordCount(currentText)
+	lineCount.value = computeLineCount(currentText)
 	isDirty.value = true
 	emit('update:dirty', true)
 }
@@ -837,6 +839,7 @@ function handleReviewPromptChange(promptName: string) {
 // CodeMirror 初始化
 function buildExtensions() {
 	return [
+		lineNumbers(),
 		history(),
 		keymap.of([...defaultKeymap, ...historyKeymap]),
 		highlightField,
@@ -844,6 +847,7 @@ function buildExtensions() {
 			if (update.docChanged) {
 				const text = update.state.doc.toString()
 				wordCount.value = computeWordCount(text)
+				lineCount.value = computeLineCount(text)
 				if (text !== originalContent.value) {
 					isDirty.value = true
 					emit('update:dirty', true)
@@ -898,6 +902,7 @@ onMounted(async () => {
 
 	originalContent.value = initialText
 	wordCount.value = computeWordCount(initialText)
+	lineCount.value = computeLineCount(initialText)
 
 	const state = EditorState.create({
 		doc: initialText,
@@ -946,8 +951,13 @@ watch(() => props.card?.content, (newContent) => {
 		isDirty.value = false
 		emit('update:dirty', false)
 		wordCount.value = computeWordCount(newText)
+		lineCount.value = computeLineCount(newText)
 	}
 }, { deep: true })
+
+defineExpose({
+	handleSave,
+})
 </script>
 
 <style scoped>
@@ -1197,6 +1207,15 @@ watch(() => props.card?.content, (newContent) => {
 }
 
 .word-count-text {
+	font-weight: 500;
+}
+
+.separator {
+	margin: 0 8px;
+	color: var(--el-text-color-disabled);
+}
+
+.line-count-text {
 	font-weight: 500;
 }
 

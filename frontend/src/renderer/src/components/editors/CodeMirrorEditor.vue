@@ -1843,7 +1843,7 @@ function isCanceledRequest(error: unknown): boolean {
 }
 
 // 字号/行距（默认 16px / 1.8）
-const fontSize = ref<number>(16)
+const fontSize = ref<number>(20)
 const lineHeight = ref<number>(1.8)
 
 // 润色和扩写的提示词列表

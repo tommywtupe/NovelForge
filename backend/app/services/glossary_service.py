@@ -76,14 +76,27 @@ def extract_terms_from_card(card: Card) -> List[str]:
 def detect_new_concepts(
     session: Session,
     project_id: int,
-    existing_glossary: Optional[TranslationGlossary] = None
+    existing_glossary: Optional[TranslationGlossary] = None,
+    target_language: Optional[str] = None
 ) -> Tuple[List[GlossaryTerm], List[str]]:
-    """检测新概念，返回 (新术语列表, 所有已存在术语的原文列表)"""
+    """检测新概念，返回 (新术语列表, 所有已存在术语的原文列表)
+
+    Args:
+        session: 数据库会话
+        project_id: 项目ID
+        existing_glossary: 现有术语表（仅包含目标语言的术语）
+        target_language: 目标语言，用于确保术语隔离
+    """
     entity_cards = get_project_entity_cards(session, project_id)
 
     existing_sources = set()
     if existing_glossary and existing_glossary.terms:
-        existing_sources = {term.source for term in existing_glossary.terms}
+        # 只添加与目标语言匹配的术语到已存在集合
+        for term in existing_glossary.terms:
+            # 如果指定了目标语言，确保只考虑同语言的已翻译术语
+            # 注意：GlossaryTerm 没有 target_language 字段，
+            # 但 TranslationGlossary 有。因此这里的 terms 应该只来自同语言术语表
+            existing_sources.add(term.source)
 
     new_terms: List[GlossaryTerm] = []
     all_sources: List[str] = list(existing_sources)
@@ -122,22 +135,112 @@ def build_glossary_context(terms: List[GlossaryTerm]) -> str:
     return "【翻译术语表】\n" + "\n".join(lines) + "\n\n请在翻译时优先使用上述术语表的翻译。"
 
 
+# 语言前缀映射
+GLOSSARY_PREFIX_MAP = {
+    "繁體中文": "術語表",
+    "日文": "用語集",
+    "英文": "Glossary",
+    "韓文": "용어집",
+}
+
+
+def get_glossary_prefix(ui_language: str) -> str:
+    """获取语言对应的术语表前缀"""
+    return GLOSSARY_PREFIX_MAP.get(ui_language, "術語表")
+
+
+def tokenize_text(text: str) -> set:
+    """使用 jieba 对文本进行分词，返回词集合"""
+    try:
+        import jieba
+        words = jieba.cut(text, cut_all=True)  # 精确模式
+        return set(words)
+    except ImportError:
+        # 如果没有 jieba，使用简单的字符级匹配作为 fallback
+        logger.warning("jieba not available, using simple character matching")
+        return set()
+
+
+def build_glossary_context_dynamic(
+    glossary: "TranslationGlossary",
+    source_text: str = "",
+    ui_language: str = "繁體中文",
+) -> str:
+    """构建术语表上下文（动态匹配版）
+
+    根据原文内容动态匹配术语表中实际出现的术语。
+
+    Args:
+        glossary: 术语表内容
+        source_text: 待翻译的原文（用于动态匹配术语）
+        ui_language: UI语言（用于确定前缀）
+
+    Returns:
+        术语表上下文字符串
+    """
+    if not glossary or not glossary.terms:
+        logger.debug("[术语表] glossary 或 terms 为空")
+        return ""
+
+    terms = glossary.terms
+    if not terms:
+        logger.debug("[术语表] terms 列表为空")
+        return ""
+
+    prefix = get_glossary_prefix(ui_language)
+    lines = []
+
+    # 如果有原文，进行分词预处理以支持精确匹配
+    word_set: set = set()
+    if source_text:
+        word_set = tokenize_text(source_text)
+        logger.debug(f"[术语表] 分词结果: {len(word_set)} words, sample={list(word_set)[:10]}")
+
+    matched_count = 0
+    skipped_no_translation = 0
+    skipped_not_in_text = 0
+
+    for term in terms:
+        if not term.translated:
+            skipped_no_translation += 1
+            continue
+
+        # 如果有分词结果，进行词边界匹配
+        if word_set:
+            if term.source not in word_set:
+                skipped_not_in_text += 1
+                continue
+        # 如果没有分词结果（如 jieba 不可用），fallback 到简单的字符串包含检查
+        elif source_text and term.source not in source_text:
+            skipped_not_in_text += 1
+            continue
+
+        line = f"{prefix} {term.source} -> {term.translated}"
+        if term.notes:
+            line += f" #{term.notes}:"
+        lines.append(line)
+        matched_count += 1
+
+    logger.debug(f"[术语表] 匹配统计: matched={matched_count}, skipped(no_translation)={skipped_no_translation}, skipped(not_in_text)={skipped_not_in_text}")
+
+    if not lines:
+        return ""
+
+    return "\n".join(lines)
+
+
 def get_or_create_glossary_card(
     session: Session,
     project_id: int,
     target_language: str,
 ) -> Card:
-    """获取或创建术语表卡片"""
-    # 查找已存在的术语表
-    statement = (
-        select(Card)
-        .join(CardType, Card.card_type_id == CardType.id)
-        .where(Card.project_id == project_id)
-        .where(CardType.name == "翻译术语表")
-    )
-    existing = session.exec(statement).first()
+    """获取或创建术语表卡片（按目标语言查找或创建）"""
+    # 先按目标语言查找已存在的术语表
+    all_glossaries = get_project_glossaries(session, project_id, target_language)
 
-    if existing:
+    if all_glossaries:
+        # 找到了对应语言的术语表
+        existing = all_glossaries[0]
         content = existing.content or {}
         if isinstance(content, dict):
             # 确保 content 是正确的格式
@@ -190,7 +293,7 @@ def update_glossary_from_extraction(
 
     if request.update_mode in ["scan_new_concepts", "scan_and_translate"]:
         # 模式1和4：检测新概念
-        new_terms, _ = detect_new_concepts(session, request.project_id, existing_glossary)
+        new_terms, _ = detect_new_concepts(session, request.project_id, existing_glossary, request.target_language)
 
         if existing_glossary:
             existing_terms_map = {t.source: t for t in existing_glossary.terms}
@@ -221,7 +324,7 @@ def update_glossary_from_extraction(
 
     elif request.update_mode == "translate_new_concepts":
         # 模式2：仅为新概念更新翻译（需要外部调用 LLM 翻译后再次调用）
-        new_terms, all_sources = detect_new_concepts(session, request.project_id, existing_glossary)
+        new_terms, all_sources = detect_new_concepts(session, request.project_id, existing_glossary, request.target_language)
 
         # 返回待翻译的新术语，实际翻译由调用方处理
         return GlossaryTermExtractionResponse(
@@ -234,7 +337,7 @@ def update_glossary_from_extraction(
 
     elif request.update_mode == "full_rebuild_translations":
         # 模式3：全量重建翻译
-        all_terms, _ = detect_new_concepts(session, request.project_id, None)
+        all_terms, _ = detect_new_concepts(session, request.project_id, None, request.target_language)
 
         new_glossary = TranslationGlossary(
             name=f"{request.target_language}术语表",
@@ -464,10 +567,20 @@ def get_project_glossaries(
     if target_language:
         # 需要过滤特定语言的术语表
         cards = session.exec(statement).all()
-        return [
-            c for c in cards
-            if (c.content or {}).get("target_language") == target_language
-        ]
+        filtered_cards = []
+        for c in cards:
+            content = c.content or {}
+            # content 可能是 JSON 字符串，需要解析
+            if isinstance(content, str):
+                import json
+                try:
+                    content = json.loads(content)
+                except Exception:
+                    content = {}
+            # 确保 content 是字典
+            if isinstance(content, dict) and content.get("target_language") == target_language:
+                filtered_cards.append(c)
+        return filtered_cards
 
     return session.exec(statement).all()
 
@@ -476,8 +589,10 @@ def update_glossary_terms(
     session: Session,
     glossary_card_id: int,
     terms: List[GlossaryTerm],
+    name: Optional[str] = None,
+    target_language: Optional[str] = None,
 ) -> Card:
-    """更新术语表的术语"""
+    """更新术语表的术语和元数据"""
     glossary_card = session.get(Card, glossary_card_id)
     if not glossary_card:
         raise ValueError(f"术语表卡片不存在: {glossary_card_id}")
@@ -500,9 +615,17 @@ def update_glossary_terms(
 
     # 更新术语
     existing_glossary.terms = terms
+
+    # 更新元数据（如果提供）
+    if name is not None:
+        existing_glossary.name = name
+    if target_language is not None:
+        existing_glossary.target_language = target_language
+
     existing_glossary.updated_at = datetime.now().isoformat()
 
     glossary_card.content = existing_glossary.model_dump()
+    glossary_card.title = existing_glossary.name  # 同步更新卡片标题
     session.add(glossary_card)
     session.commit()
     session.refresh(glossary_card)

@@ -30,8 +30,29 @@ from app.services.ai.generation.prompt_builder import build_instruction_system_p
 from app.schemas.instruction import InstructionGenerateRequest
 from app.schemas.wizard import Tags as _Tags
 from loguru import logger
+import re
 
 router = APIRouter()
+
+
+def _extract_body_from_context(context: str) -> str:
+    """从上下文字符串中提取正文内容（去掉【翻译上下文】等元信息标记）"""
+    if not context:
+        return ""
+
+    # 尝试提取【原文正文】之后的内容
+    body_match = re.search(r"【原文正文】\n*([\s\S]*)", context)
+    if body_match:
+        return body_match.group(1).strip()
+
+    # 如果没有【原文正文】标记，尝试去掉【翻译上下文】部分
+    context_match = re.search(r"【翻译上下文】\n[\s\S]*?(?:【|$)", context)
+    if context_match:
+        after_context = context[context_match.end():]
+        return after_context.strip()
+
+    # 直接返回原内容
+    return context
 
 # 响应模型映射表（内置）
 from app.schemas.response_registry import RESPONSE_MODEL_MAP
@@ -237,8 +258,58 @@ async def generate_continuation(
         system_prompt = prompt_service.inject_knowledge(session, str(p.template))
 
 
+        # 1. 组装事实子图
         request.context_info = enrich_continuation_context_info(session, request)
-        
+
+        # 2. 仅当 prompt_name 以"正文翻译-"开头时，自动进行术语表动态匹配
+        if request.prompt_name and request.prompt_name.startswith("正文翻译-"):
+            target_lang = request.prompt_name.replace("正文翻译-", "").strip()  # 如 "繁體中文"
+            logger.info(f"[翻译正文] 检测到翻译任务，target_lang={target_lang}, project_id={request.project_id}")
+            if request.project_id:
+                from app.services.glossary_service import (
+                    build_glossary_context_dynamic,
+                    get_project_glossaries,
+                    TranslationGlossary,
+                )
+                # 根据 project_id 和目标语言获取术语表
+                glossary_cards = get_project_glossaries(session, request.project_id, target_lang)
+                logger.info(f"[翻译正文] 找到 {len(glossary_cards)} 个术语表")
+                if glossary_cards:
+                    glossary_card = glossary_cards[0]
+                    content = glossary_card.content or {}
+                    if isinstance(content, str):
+                        import json
+                        content = json.loads(content)
+                    logger.info(f"[翻译正文] 术语表内容: terms count={len(content.get('terms', []))}")
+                    if content.get("terms"):
+                        glossary = TranslationGlossary(**content)
+                        # 从 context_info 中提取原文正文
+                        source_text = _extract_body_from_context(request.context_info or "")
+                        logger.info(f"[翻译正文] 提取原文长度: {len(source_text)}")
+                        # 构建术语表上下文
+                        glossary_context = build_glossary_context_dynamic(
+                            glossary=glossary,
+                            source_text=source_text,
+                            ui_language=target_lang,
+                        )
+                        logger.info(f"[翻译正文] 术语表上下文构建结果: length={len(glossary_context)}, content={glossary_context[:200] if glossary_context else '(empty)'}")
+                        if glossary_context:
+                            # 将术语表上下文添加到上下文的开头
+                            if request.context_info:
+                                request.context_info = f"{glossary_context}\n\n{request.context_info}"
+                            else:
+                                request.context_info = glossary_context
+                else:
+                    logger.warning(f"[翻译正文] 未找到 target_language={target_lang} 的术语表")
+
+        # 打印翻译 prompt 供校对
+        logger.info(f"[翻译正文] prompt_name={request.prompt_name}, project_id={request.project_id}")
+        logger.info(f"[翻译正文] ========== System Prompt ==========")
+        logger.info(f"{system_prompt}")
+        logger.info(f"[翻译正文] =========================================")
+        logger.info(f"[翻译正文] ========== Context Info ==========")
+        logger.info(f"{request.context_info}")
+        logger.info(f"[翻译正文] ========================================")
 
         if request.stream:
             # 先做一次配额预检，避免流式过程中才抛错

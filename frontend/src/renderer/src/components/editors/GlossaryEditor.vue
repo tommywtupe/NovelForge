@@ -202,7 +202,6 @@ import {
 	updateGlossaryTerms,
 	deleteGlossary,
 	translateGlossaryTerms,
-	buildGlossaryContext,
 	type GlossaryTerm,
 	type UpdateMode,
 } from '@renderer/api/glossary'
@@ -297,7 +296,12 @@ async function handleSave() {
 			title: localContent.name,
 			content: updatedContent,
 		}
-		await updateGlossaryTerms(props.card.id, localContent.terms)
+		await updateGlossaryTerms(
+			props.card.id,
+			localContent.terms,
+			localContent.name,
+			localContent.target_language
+		)
 		isDirty.value = false
 		emit('update:dirty', false)
 		emit('save')

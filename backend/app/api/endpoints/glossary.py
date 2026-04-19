@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.db.session import get_session
@@ -69,15 +70,28 @@ async def extract_and_update_glossary(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class UpdateGlossaryRequest(BaseModel):
+    """更新术语表的请求"""
+    terms: list[GlossaryTerm]
+    name: Optional[str] = None
+    target_language: Optional[str] = None
+
+
 @router.put("/{glossary_card_id}/terms", response_model=dict)
 def update_terms(
     glossary_card_id: int,
-    terms: list[GlossaryTerm],
+    request: UpdateGlossaryRequest,
     session: Session = Depends(get_session),
 ):
-    """更新术语表的术语（手动调整）"""
+    """更新术语表的术语和元数据（手动调整）"""
     try:
-        card = update_glossary_terms(session, glossary_card_id, terms)
+        card = update_glossary_terms(
+            session,
+            glossary_card_id,
+            request.terms,
+            name=request.name,
+            target_language=request.target_language,
+        )
         return card.content or {}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

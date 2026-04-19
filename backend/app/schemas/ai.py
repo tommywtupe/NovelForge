@@ -1,5 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List, Literal
+from typing import Optional, Dict, Any, List, Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.schemas.entity import TranslationGlossary
 
 
 ContinuationWordControlMode = Literal["prompt_only", "balanced"]
@@ -79,3 +82,18 @@ class GeneralAIRequest(BaseModel):
 
     class Config:
         extra = 'ignore'
+
+
+class BuildTranslationContextRequest(BaseModel):
+    """构建翻译上下文的请求"""
+    card_id: int = Field(description="翻译卡片ID")
+    context_kind: str = Field(default="generation", description="上下文类型：generation 或 review")
+    glossary: Optional["TranslationGlossary"] = Field(default=None, description="术语表内容")
+    ui_language: str = Field(default="繁體中文", description="UI语言")
+    project_id: Optional[int] = Field(default=None, description="项目ID")
+
+
+class BuildTranslationContextResponse(BaseModel):
+    """构建翻译上下文的响应"""
+    context_info: str = Field(description="完整的上下文信息，包含翻译上下文和术语表")
+    source_text: str = Field(description="提取的原文正文")
