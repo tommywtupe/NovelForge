@@ -201,6 +201,12 @@ def build_budget_hint_text(
             lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍（收尾节拍），本轮将处理本章最后一个节拍，请忽略字数限制，确保所有重点都被充分展开，并配以完美的结尾， 并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
         elif plan.round_index == 1:
             lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，这是本章第{plan.round_index} 节拍(beat_id:{plan.round_index} )，需要承接上一话最后一个节拍的正文结尾，并参考第 {plan.round_index} 节拍的动作和潜文本动作。确保转场自然、情绪连贯")
+            lines.append("- 章节开头要求：请从以下五个叙述维度之一出发构建开篇：")
+            lines.append("  1. 【私人记忆 | Private Anchor】挖掘角色过往与核心主题的矛盾锚点，通过带有主观色彩的回忆或执念带出世界观独特设定")
+            lines.append("  2. 【异质现象 | Phenomenon】描写打破常规、具有跨领域冲击力的事实或视觉奇观，呈现让读者产生'为什么会这样'的违和画面")
+            lines.append("  3. 【核心拷问 | Fatal Question】抛出叙述者或主角灵魂深处真正想要刺破的真相，带有命运感的终极困惑，定义故事基调")
+            lines.append("  4. 【沉浸场景 | Immersive Scene】定格极具张力的瞬间（特定时间+地点+行动中的人物），利用五感细节快速建立现场感")
+            lines.append("  5. 【第一句话 | The Hook】孤立的一行文字，具有极强文学爆发力或反直觉陈述，用一句话确立叙事风格并钩住读者")
         else:
             lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，本轮将处理本章第 {plan.round_index} 节拍(beat_id:{plan.round_index} )，并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
     if plan.suggested_word_count is not None and plan.mode != "prompt_only":

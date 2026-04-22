@@ -215,9 +215,11 @@ def _transform_chapter_content(content: Dict[str, Any]) -> Dict[str, Any]:
             return text
 
         # 1. 移除 "……"
-        text = text.replace('……', '——')
+        # text = text.replace('……', '——')
         # 2. 移除 <节拍完成>
         text = text.replace('<节拍完成>', '')
+        text = text.replace('‘', '')
+        text = text.replace('’', '')
         # 3. 简化 "不是...是" → "是..."
         text = re.sub(r'不是([^，,]*)，是([^，,]+)', r'是\2', text)
         # 4. 简化 "不是...而是..." → "是..."

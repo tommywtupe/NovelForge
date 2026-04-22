@@ -840,6 +840,7 @@ function handleReviewPromptChange(promptName: string) {
 function buildExtensions() {
 	return [
 		lineNumbers(),
+		EditorView.lineWrapping,  // 自动换行
 		history(),
 		keymap.of([...defaultKeymap, ...historyKeymap]),
 		highlightField,
