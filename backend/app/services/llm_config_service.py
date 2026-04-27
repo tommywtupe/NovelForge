@@ -248,6 +248,8 @@ def copy_llm_config(session: Session, config_id: int) -> LLMConfig | None:
         used_tokens_input=0,
         used_tokens_output=0,
         used_calls=0,
+        thinking=source_config.thinking,
+        reasoning_effort=getattr(source_config, "reasoning_effort", None),
     )
     _normalize_integral_fields(new_config)
 

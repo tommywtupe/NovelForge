@@ -62,6 +62,12 @@ class LLMConfig(SQLModel, table=True):
         default=-1,
         sa_column=Column(sa.Integer, nullable=False, server_default='-1')
     )
+    # 思考与推理配置（默认开启）
+    thinking: bool = Field(
+        default=True,
+        sa_column=Column(sa.Boolean, nullable=False, server_default='1')
+    )
+    reasoning_effort: Optional[str] = Field(default=None)  # low, medium, high
 
 
 class Prompt(SQLModel, table=True):

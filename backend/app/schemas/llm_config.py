@@ -23,6 +23,9 @@ class LLMConfigBase(SQLModel):
     used_tokens_input: Optional[int] = 0
     used_tokens_output: Optional[int] = 0
     used_calls: Optional[int] = 0
+    # 思考与推理配置（默认开启）
+    thinking: Optional[bool] = True
+    reasoning_effort: Optional[str] = None  # low, medium, high
 
 class LLMConfigCreate(LLMConfigBase):
     pass
@@ -47,6 +50,8 @@ class LLMConfigUpdate(SQLModel):
     used_tokens_input: Optional[int] = None
     used_tokens_output: Optional[int] = None
     used_calls: Optional[int] = None
+    thinking: Optional[bool] = None
+    reasoning_effort: Optional[str] = None  # low, medium, high
 
 class LLMConnectionTest(SQLModel):
     provider: str

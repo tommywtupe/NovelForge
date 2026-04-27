@@ -62,6 +62,7 @@ def build_chat_model_from_payload(
     max_tokens: Optional[int] = None,
     timeout: Optional[float] = None,
     thinking_enabled: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None,
 ):
     if not api_key:
         raise ValueError("未提供 API Key")
@@ -89,7 +90,12 @@ def build_chat_model_from_payload(
             **common_kwargs,
         }
         if thinking_enabled is not None:
-            model_kwargs["extra_body"] = {"enable_thinking": thinking_enabled}
+            model_kwargs["extra_body"] = {
+                "thinking": {
+                    "type": "enabled" if thinking_enabled else "disabled"
+                },
+                **({"reasoning_effort": reasoning_effort} if reasoning_effort else {})
+            }
 
         # `responses` 模式下统一走 `ChatOpenAI`。
         # 原先 openai_compatible 仍走 `ChatQwen`，会在流式 continuation 时构造出
@@ -147,6 +153,7 @@ def build_chat_model(
     max_tokens: Optional[int] = None,
     timeout: Optional[float] = None,
     thinking_enabled: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None,
 ):
     cfg = _get_llm_config(session, llm_config_id)
     return build_chat_model_from_payload(
@@ -161,5 +168,6 @@ def build_chat_model(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
-        thinking_enabled=thinking_enabled,
+        thinking_enabled=thinking_enabled if thinking_enabled is not None else cfg.thinking,
+        reasoning_effort=reasoning_effort if reasoning_effort is not None else getattr(cfg, "reasoning_effort", None),
     )
