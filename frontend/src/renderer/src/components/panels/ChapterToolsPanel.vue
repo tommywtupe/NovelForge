@@ -103,6 +103,7 @@
 				<div class="card-header">
 					<el-icon><Box /></el-icon>
 					<span>拓展记忆</span>
+					<el-tag type="warning" size="small" style="margin-left: auto;">一站式</el-tag>
 				</div>
 			</template>
 			<div class="card-body">
@@ -147,18 +148,73 @@
 					>
 						提取概念掌握
 					</el-button>
+					<el-divider style="margin: 8px 0;" />
+					<el-button
+						type="warning"
+						class="memory-button"
+						:loading="runningAction === 'extract_all'"
+						:disabled="isBusy"
+						@click="handleExtractAll"
+					>
+						一站式提取
+					</el-button>
 				</div>
 			</div>
 		</el-card>
+
+		<!-- 一站式提取预览弹窗 -->
+		<el-dialog
+			v-model="extractAllPreviewVisible"
+			title="一站式提取结果"
+			width="80%"
+			:close-on-click-modal="true"
+		>
+			<div v-if="extractAllPreviewData" class="extract-all-preview">
+				<el-alert
+					title="以下内容已写入数据库"
+					type="info"
+					:closable="false"
+					show-icon
+					style="margin-bottom: 16px;"
+				/>
+				<el-tabs>
+					<el-tab-pane
+						v-for="result in extractAllPreviewData.results"
+						:key="result.task"
+						:label="result.name"
+						:name="result.task"
+					>
+						<template v-if="result.success && hasPreviewContent(result.preview_data)">
+							<el-table :data="getPreviewTableData(result)" stripe border size="small" max-height="400">
+								<el-table-column
+									v-for="col in getPreviewColumns(result)"
+									:key="col.prop"
+									:prop="col.prop"
+									:label="col.label"
+									:min-width="col.width || 120"
+									show-overflow-tooltip
+								/>
+							</el-table>
+							<div class="preview-summary">
+								共 {{ getPreviewTableData(result).length }} 条记录
+							</div>
+						</template>
+						<el-empty v-else-if="result.success" description="本次无内容提取" />
+						<el-alert v-else :title="result.message" type="error" :closable="false" />
+					</el-tab-pane>
+				</el-tabs>
+			</div>
+		</el-dialog>
 	</div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Box, Connection, Loading, Setting, User } from '@element-plus/icons-vue'
+import { Box, Connection, Lightning, Loading, Setting, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 import { getAIConfigOptions } from '@renderer/api/ai'
+import { extractAll, type ExtractAllResponse } from '@renderer/api/memory'
 import { useEditorStore, type ChapterExtractRunOptions } from '@renderer/stores/useEditorStore'
 
 type ExtractionAction =
@@ -169,6 +225,7 @@ type ExtractionAction =
 	| 'organization_state'
 	| 'item_state'
 	| 'concept_state'
+	| 'extract_all'
 
 interface ChapterExtractConfigState {
 	llm_config_id: number | null
@@ -193,6 +250,11 @@ const settingsVisible = ref(false)
 const extractConfig = reactive<ChapterExtractConfigState>({ ...DEFAULT_EXTRACT_CONFIG })
 const editingConfig = reactive<ChapterExtractConfigState>({ ...DEFAULT_EXTRACT_CONFIG })
 
+// 一站式提取预览相关状态
+const extractAllPreviewVisible = ref(false)
+const extractAllPreviewData = ref<ExtractAllResponse | null>(null)
+const extractAllPendingOptions = ref<ChapterExtractRunOptions | null>(null)
+
 const isBusy = computed(() => runningAction.value !== '')
 const selectedModelName = computed(() => {
 	const found = llmConfigs.value.find(item => Number(item.id) === Number(extractConfig.llm_config_id))
@@ -213,6 +275,8 @@ const runningActionLabel = computed(() => {
 			return '提取物品状态'
 		case 'concept_state':
 			return '提取概念掌握'
+		case 'extract_all':
+			return '一站式提取'
 		default:
 			return '提取'
 	}
@@ -345,6 +409,94 @@ async function handleExtractConceptState() {
 	await runExtraction('concept_state', options => editorStore.triggerExtractConceptState(options))
 }
 
+async function handleExtractAll() {
+	await runExtraction('extract_all', async options => {
+		const result = await editorStore.triggerExtractAll(options)
+		// 从 store 获取结果并显示预览弹窗
+		if (editorStore.extractAllResult) {
+			extractAllPreviewData.value = editorStore.extractAllResult
+			extractAllPendingOptions.value = options
+			extractAllPreviewVisible.value = true
+		}
+	})
+}
+
+// 判断预览数据是否有内容
+function hasPreviewContent(previewData: Record<string, any> | undefined): boolean {
+	if (!previewData) return false
+	// 检查常见的列表字段
+	return ['scenes', 'organizations', 'items', 'concepts', 'relations'].some(
+		key => Array.isArray(previewData[key]) && previewData[key].length > 0
+	)
+}
+
+// 获取预览表格数据
+function getPreviewTableData(result: ExtractAllResponse['results'][0]): Record<string, any>[] {
+	const data = result.preview_data
+	if (!data) return []
+	// 根据任务类型返回对应数组
+	if (result.task === 'scene_state') return data.scenes || []
+	if (result.task === 'organization_state') return data.organizations || []
+	if (result.task === 'item_state') return data.items || []
+	if (result.task === 'concept_state') return data.concepts || []
+	if (result.task === 'relation') return data.relations || []
+	if (result.task === 'character_dynamic') return data.info_list || []
+	return []
+}
+
+// 获取预览表格列
+function getPreviewColumns(result: ExtractAllResponse['results'][0]): Array<{ prop: string; label: string; width?: number }> {
+	const task = result.task
+	if (task === 'scene_state') {
+		return [
+			{ prop: 'name', label: '名称', width: 100 },
+			{ prop: 'description', label: '描述' },
+			{ prop: 'function_in_story', label: '作用' },
+			{ prop: 'dynamic_state', label: '状态', width: 150 },
+		]
+	}
+	if (task === 'organization_state') {
+		return [
+			{ prop: 'name', label: '名称', width: 100 },
+			{ prop: 'description', label: '描述' },
+			{ prop: 'influence', label: '影响力', width: 120 },
+			{ prop: 'relationship', label: '关系', width: 150 },
+			{ prop: 'dynamic_state', label: '状态', width: 150 },
+		]
+	}
+	if (task === 'item_state') {
+		return [
+			{ prop: 'name', label: '名称', width: 100 },
+			{ prop: 'category', label: '类别', width: 80 },
+			{ prop: 'description', label: '描述' },
+			{ prop: 'current_state', label: '当前状态', width: 120 },
+		]
+	}
+	if (task === 'concept_state') {
+		return [
+			{ prop: 'name', label: '名称', width: 100 },
+			{ prop: 'category', label: '类别', width: 80 },
+			{ prop: 'description', label: '描述' },
+			{ prop: 'rule_definition', label: '规则定义' },
+		]
+	}
+	if (task === 'relation') {
+		return [
+			{ prop: 'a', label: '实体A', width: 100 },
+			{ prop: 'kind', label: '关系', width: 80 },
+			{ prop: 'b', label: '实体B', width: 100 },
+			{ prop: 'fact', label: '事实' },
+		]
+	}
+	if (task === 'character_dynamic') {
+		return [
+			{ prop: 'name', label: '角色', width: 100 },
+			{ prop: 'dynamic_info', label: '动态信息' },
+		]
+	}
+	return []
+}
+
 onMounted(async () => {
 	try {
 		const options = await getAIConfigOptions()
@@ -457,5 +609,16 @@ onMounted(async () => {
 	.memory-actions {
 		grid-template-columns: minmax(0, 1fr);
 	}
+}
+
+.extract-all-preview {
+	padding: 8px 0;
+}
+
+.preview-summary {
+	margin-top: 8px;
+	text-align: right;
+	color: var(--el-text-color-secondary);
+	font-size: 13px;
 }
 </style>

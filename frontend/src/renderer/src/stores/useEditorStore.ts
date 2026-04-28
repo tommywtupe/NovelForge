@@ -85,10 +85,14 @@ export const useEditorStore = defineStore('editor', () => {
   const triggerExtractRelationsRef = ref<null | ((opts: ChapterExtractRunOptions) => Promise<void>)>(null)
   // 用于跨组件触发“提取物品状态”的回调
   const triggerExtractItemStateRef = ref<null | ((opts: ChapterExtractRunOptions) => Promise<void>)>(null)
-  // 用于跨组件触发“提取概念掌握”的回调
+  // 用于跨组件触发"提取概念掌握"的回调
   const triggerExtractConceptStateRef = ref<null | ((opts: ChapterExtractRunOptions) => Promise<void>)>(null)
   const triggerExtractSceneStateRef = ref<null | ((opts: ChapterExtractRunOptions) => Promise<void>)>(null)
   const triggerExtractOrganizationStateRef = ref<null | ((opts: ChapterExtractRunOptions) => Promise<void>)>(null)
+  // 用于跨组件触发"一站式提取"的回调
+  const triggerExtractAllRef = ref<null | ((opts: ChapterExtractRunOptions) => Promise<void>)>(null)
+  // 一站式提取结果（供预览弹窗使用）
+  const extractAllResult = ref<Record<string, any> | null>(null)
 
   // 写作上下文共享：卷号/章节号/标题（供其它面板使用）
   const currentVolumeNumber = ref<number | null>(null)
@@ -253,6 +257,22 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  function setTriggerExtractAll(fn: null | ((opts: ChapterExtractRunOptions) => Promise<void>)) {
+    triggerExtractAllRef.value = fn
+  }
+
+  async function triggerExtractAll(opts: ChapterExtractRunOptions) {
+    if (triggerExtractAllRef.value) {
+      const result = await triggerExtractAllRef.value(opts)
+      extractAllResult.value = result || null
+      return result
+    }
+  }
+
+  function setExtractAllResult(result: Record<string, any> | null) {
+    extractAllResult.value = result
+  }
+
   function setCurrentContextInfo(payload: { volume?: number | null; chapter?: number | null; title?: string }) {
     if (payload.volume !== undefined) currentVolumeNumber.value = payload.volume ?? null
     if (payload.chapter !== undefined) currentChapterNumber.value = payload.chapter ?? null
@@ -275,6 +295,8 @@ export const useEditorStore = defineStore('editor', () => {
     triggerExtractConceptStateRef.value = null
     triggerExtractSceneStateRef.value = null
     triggerExtractOrganizationStateRef.value = null
+    triggerExtractAllRef.value = null
+    extractAllResult.value = null
     currentVolumeNumber.value = null
     currentChapterNumber.value = null
     currentChapterTitle.value = ''
@@ -329,6 +351,10 @@ export const useEditorStore = defineStore('editor', () => {
     triggerExtractSceneState,
     setTriggerExtractOrganizationState,
     triggerExtractOrganizationState,
+    setTriggerExtractAll,
+    triggerExtractAll,
+    extractAllResult,
+    setExtractAllResult,
     setCurrentContextInfo,
     reset
   }

@@ -28,6 +28,7 @@ export interface ExtractPreviewRequest {
 	extra_context?: string
 	volume_number?: number
 	chapter_number?: number
+	auto_apply?: boolean
 }
 
 export interface ExtractPreviewResponse {
@@ -158,4 +159,50 @@ export function ingestRelationsFromPreview(data: IngestRelationsFromPreviewReq) 
 		volume_number: data.volume_number ?? undefined,
 		chapter_number: data.chapter_number ?? undefined,
 	}).then(res => ({ written: res.written } as IngestRelationsFromPreviewResp))
+}
+
+// 一站式记忆提取
+export interface ExtractAllRequest {
+	project_id?: number
+	text: string
+	participants?: ParticipantTyped[]
+	llm_config_id: number
+	temperature?: number
+	max_tokens?: number
+	timeout?: number
+	extra_context?: string
+	volume_number?: number
+	chapter_number?: number
+	auto_apply?: boolean
+}
+
+export interface TaskResult {
+	task: string
+	name: string
+	success: boolean
+	message: string
+	preview_data: Record<string, any>
+	written: number
+	updated_card_count: number
+	updated_relation_count: number
+}
+
+export interface ExtractAllResponse {
+	results: TaskResult[]
+	total_written: number
+	total_updated_cards: number
+	total_updated_relations: number
+}
+
+export function extractAll(data: ExtractAllRequest) {
+	return http.post<ExtractAllResponse>('/memory/extract-all', data, '/api', { showLoading: false })
+}
+
+export function applyAll(data: {
+	project_id: number
+	results: TaskResult[]
+	volume_number?: number
+	chapter_number?: number
+}) {
+	return http.post<ExtractAllResponse>('/memory/apply-all', data, '/api', { showLoading: false })
 }

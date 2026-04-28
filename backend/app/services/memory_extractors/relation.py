@@ -29,6 +29,7 @@ class RelationExtractor:
         timeout: float | None = None,
         extra_context: str | None = None,
         context: dict[str, Any] | None = None,
+        filter_by_participants: bool = True,
     ) -> RelationExtraction:
         return await service.extract_relations_preview(
             text=text,
@@ -37,6 +38,7 @@ class RelationExtractor:
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
+            filter_by_participants=filter_by_participants,
         )
 
     def persist(

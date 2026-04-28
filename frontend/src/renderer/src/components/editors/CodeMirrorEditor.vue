@@ -580,6 +580,13 @@
 				</div>
 			</template>
 			<div v-if="memoryPreviewData">
+				<el-alert
+					type="success"
+					:closable="false"
+					show-icon
+					title="数据已自动写入数据库，可在此修改后点击保存"
+					style="margin-bottom: 12px;"
+				/>
 				<div v-if="memoryMissingCards.length" class="missing-card-panel">
 					<el-alert
 						type="warning"
@@ -1124,8 +1131,8 @@
 				/>
 			</div>
 			<template #footer>
-				<el-button @click="closeMemoryPreview">取消</el-button>
-				<el-button type="primary" :loading="memoryPreviewApplying" @click="applyMemoryPreviewConfirm">确认</el-button>
+				<el-button @click="closeMemoryPreview">关闭</el-button>
+				<el-button type="primary" :loading="memoryPreviewApplying" @click="applyMemoryPreviewConfirm">保存修改</el-button>
 			</template>
 		</el-dialog>
 	</div>
@@ -1178,7 +1185,7 @@ const props = defineProps<{
 }>()
 
 const previewConfirmReminder =
-	'若信息提取有误，如卡片名称不准确，请手动编辑调整后再确认，避免数据回写对应卡片失败'
+	'数据已自动写入数据库。如需修改，请在表格中编辑后再点击保存'
 
 const emit = defineEmits<{
 	(e: 'update:chapter', value: any): void
@@ -3322,6 +3329,13 @@ editorStore.setTriggerExtractConceptState(async (opts) => {
 	}
 })
 
+// 一站式提取
+editorStore.setTriggerExtractAll(async (opts) => {
+	if (typeof opts?.llm_config_id === 'number') {
+		return await triggerExtractAll(opts)
+	}
+})
+
 // 跨组件替换
 editorStore.setApplyChapterReplacements(async (pairs) => {
 	if (!view) return
@@ -3577,7 +3591,12 @@ async function extractMemoryByCode(extractorCode: MemoryExtractorCode, llmConfig
 			extra_context: extraContext,
 			volume_number: vol,
 			chapter_number: ch,
+			auto_apply: true,
 		})
+		// 显示写入结果提示
+		if (data.written !== undefined && data.written > 0) {
+			ElMessage.success(`已写入 ${data.written} 张卡片`)
+		}
 		memoryPreviewExtractorCode.value = extractorCode
 		memoryPreviewData.value = data.preview_data
 		await ensureEditorMainTabVisible()
@@ -3585,6 +3604,39 @@ async function extractMemoryByCode(extractorCode: MemoryExtractorCode, llmConfig
 	} catch (e) {
 		console.error(e)
 		ElMessage.error(`${getMemoryExtractorDisplayLabel(extractorCode)}提取失败`)
+	}
+}
+
+async function triggerExtractAll(opts: ChapterExtractRunOptions) {
+	try {
+		const projectId = projectStore.currentProject?.id || (localCard as any).project_id
+		if (!projectId) { ElMessage.error('未找到当前项目ID'); return }
+		const text = getText() || ''
+		const participants = extractParticipantsWithTypeForCurrentChapter()
+		const vol = (localCard as any)?.content?.volume_number ?? (props.contextParams as any)?.volume_number
+		const ch = (localCard as any)?.content?.chapter_number ?? (props.contextParams as any)?.chapter_number
+		const runOptions = buildExtractRunOptions(opts, opts.llm_config_id)
+
+		const { extractAll } = await import('@renderer/api/memory')
+		const result = await extractAll({
+			project_id: projectId,
+			text,
+			participants,
+			llm_config_id: opts.llm_config_id,
+			temperature: runOptions?.temperature,
+			max_tokens: runOptions?.max_tokens,
+			timeout: runOptions?.timeout,
+			volume_number: vol,
+			chapter_number: ch,
+			auto_apply: true,
+		})
+		// 存储结果供预览弹窗使用
+		editorStore.setExtractAllResult(result)
+		ElMessage.success(`已写入 ${result.total_written} 项（卡片 ${result.total_updated_cards}，关系 ${result.total_updated_relations}）`)
+		return result
+	} catch (e) {
+		console.error(e)
+		ElMessage.error('一站式提取失败')
 	}
 }
 
@@ -3862,6 +3914,7 @@ onUnmounted(() => {
 	editorStore.setTriggerExtractOrganizationState(null)
 	editorStore.setTriggerExtractItemState(null)
 	editorStore.setTriggerExtractConceptState(null)
+	editorStore.setTriggerExtractAll(null)
 	try { reviewAbortController.value?.abort(); } catch {}
 	try { streamHandle?.cancel(); } catch {}
 

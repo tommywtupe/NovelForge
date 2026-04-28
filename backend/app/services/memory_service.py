@@ -16,7 +16,7 @@ from app.db.models import Card, CardType
 from sqlmodel import select
 
 # 引入带类型的参与者模型
-from app.schemas.memory import ParticipantTyped
+from app.schemas.memory import ParticipantTyped, TaskResult
 
 # 从数据库加载提示词
 from app.services import prompt_service
@@ -206,6 +206,7 @@ class MemoryService:
         prompt_name: Optional[str] = "关系提取",
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        filter_by_participants: bool = True,
     ) -> RelationExtraction:
         prompt = prompt_service.get_prompt_by_name(self.session, prompt_name)
         system_prompt = prompt.template
@@ -246,6 +247,7 @@ class MemoryService:
         extra_context: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        filter_by_participants: bool = True,
     ) -> UpdateDynamicInfo:
         prompt = prompt_service.get_prompt_by_name(self.session, prompt_name)
         if not prompt:
@@ -730,4 +732,251 @@ class MemoryService:
             for card in updated_cards.values():
                 self.session.refresh(card)
 
-        return {"success": True, "updated_card_count": len(updated_cards)} 
+        return {"success": True, "updated_card_count": len(updated_cards)}
+
+    async def extract_all(
+        self,
+        *,
+        text: str,
+        project_id: int | None,
+        participants: Optional[List[ParticipantTyped]] = None,
+        llm_config_id: int = 1,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        timeout: Optional[float] = None,
+        extra_context: Optional[str] = None,
+        volume_number: Optional[int] = None,
+        chapter_number: Optional[int] = None,
+        auto_apply: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        一站式记忆提取：并行调用多个 LLM 提取任务，顺序写入数据库。
+
+        提取任务顺序：
+        1. character_dynamic - 角色动态信息
+        2. scene_state - 场景状态
+        3. organization_state - 组织状态
+        4. item_state - 物品状态
+        5. concept_state - 概念掌握
+        6. relation - 关系入图（最后，因为依赖实体存在）
+
+        Phase 1: 并行 LLM 提取
+        Phase 2: 顺序 DB 写入（避免死锁）
+        """
+        import asyncio
+
+        # 定义要执行的任务
+        TASKS = [
+            ("character_dynamic", "角色动态信息"),
+            ("scene_state", "场景状态"),
+            ("organization_state", "组织状态"),
+            ("item_state", "物品状态"),
+            ("concept_state", "概念掌握"),
+            ("relation", "关系入图"),
+        ]
+
+        context = {
+            "volume_number": volume_number,
+            "chapter_number": chapter_number,
+        }
+
+        # Phase 1: 并行 LLM 提取
+        extraction_coroutines = []
+        for task_code, task_name in TASKS:
+            coroutine = self._extract_single(
+                task_code=task_code,
+                project_id=project_id,
+                text=text,
+                participants=participants,
+                llm_config_id=llm_config_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                extra_context=extra_context,
+                context=context,
+                filter_by_participants=False,  # 一站式提取不过滤，保留所有实体
+            )
+            extraction_coroutines.append(coroutine)
+
+        # 并行执行所有提取
+        logger.info(f"[extract_all] Starting {len(extraction_coroutines)} parallel LLM extractions")
+        results: List[Dict[str, Any]] = await asyncio.gather(*extraction_coroutines, return_exceptions=True)
+
+        # 处理提取结果
+        task_results: List[TaskResult] = []
+        for i, (task_code, task_name) in enumerate(TASKS):
+            result = results[i]
+            if isinstance(result, Exception):
+                task_result = TaskResult(
+                    task=task_code,
+                    name=task_name,
+                    success=False,
+                    message=f"LLM 提取失败: {str(result)}",
+                )
+            else:
+                task_result = TaskResult(
+                    task=result.get("extractor_code", task_code),
+                    name=task_name,
+                    success=True,
+                    message="提取成功",
+                    preview_data=result.get("preview_data", {}),
+                )
+            task_results.append(task_result)
+
+        # Phase 2: 顺序 DB 写入（仅当 auto_apply=True）
+        if auto_apply:
+            logger.info("[extract_all] Phase 2: Sequential DB writes")
+            for task_result in task_results:
+                if not task_result.success:
+                    continue
+                if task_result.task == "relation":
+                    # 关系入图使用专门的 ingest_relations_from_llm 方法
+                    try:
+                        relation_data = RelationExtraction.model_validate(task_result.preview_data)
+                        write_result = self.ingest_relations_from_llm(
+                            project_id=project_id,
+                            data=relation_data,
+                            volume_number=volume_number,
+                            chapter_number=chapter_number,
+                            participants_with_type=participants,
+                        )
+                        task_result.written = write_result.get("written", 0)
+                        task_result.updated_relation_count = write_result.get("written", 0)
+                    except Exception as e:
+                        logger.error(f"[extract_all] Relation ingest failed: {e}")
+                        task_result.success = False
+                        task_result.message = f"关系入图失败: {str(e)}"
+                else:
+                    # 普通卡片提取
+                    try:
+                        write_result = self.apply_preview(
+                            extractor_code=task_result.task,
+                            project_id=project_id,
+                            data=task_result.preview_data,
+                            volume_number=volume_number,
+                            chapter_number=chapter_number,
+                            participants=participants,
+                        )
+                        task_result.written = write_result.get("written", 0)
+                        task_result.updated_card_count = write_result.get("updated_card_count", 0)
+                        task_result.updated_relation_count = write_result.get("updated_relation_count", 0)
+                    except Exception as e:
+                        logger.error(f"[extract_all] Apply preview failed for {task_result.task}: {e}")
+                        task_result.success = False
+                        task_result.message = f"写入失败: {str(e)}"
+
+        # 计算汇总
+        total_written = sum(r.written for r in task_results)
+        total_cards = sum(r.updated_card_count for r in task_results)
+        total_relations = sum(r.updated_relation_count for r in task_results)
+
+        return {
+            "results": [r.model_dump() for r in task_results],
+            "total_written": total_written,
+            "total_updated_cards": total_cards,
+            "total_updated_relations": total_relations,
+        }
+
+    async def _extract_single(
+        self,
+        *,
+        task_code: str,
+        project_id: int | None,
+        text: str,
+        participants: Optional[List[ParticipantTyped]] = None,
+        llm_config_id: int = 1,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        timeout: Optional[float] = None,
+        extra_context: Optional[str] = None,
+        context: Dict[str, Any],
+        filter_by_participants: bool = True,
+    ) -> Dict[str, Any]:
+        """执行单个提取任务"""
+        try:
+            extractor = self.extractor_registry.get(task_code)
+            typed_participants = participants or []
+            data = await extractor.extract(
+                service=self,
+                session=self.session,
+                project_id=project_id,
+                text=text,
+                participants=typed_participants,
+                llm_config_id=llm_config_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                extra_context=extra_context,
+                context=context,
+                filter_by_participants=filter_by_participants,
+            )
+            return {
+                "extractor_code": extractor.code,
+                "preview_data": data.model_dump(mode="json"),
+                "affected_targets": extractor.build_affected_targets(data),
+            }
+        except Exception as e:
+            logger.error(f"[extract_all] Extraction failed for {task_code}: {e}")
+            raise
+
+    async def apply_all(
+        self,
+        *,
+        project_id: int,
+        results: List[TaskResult],
+        volume_number: Optional[int] = None,
+        chapter_number: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        应用用户修改后的一站式提取结果。
+        用于用户在前端预览弹窗中修改数据后保存。
+        """
+        task_results: List[TaskResult] = []
+
+        for task_result in results:
+            if not task_result.success:
+                task_results.append(task_result)
+                continue
+
+            try:
+                if task_result.task == "relation":
+                    # 关系入图
+                    relation_data = RelationExtraction.model_validate(task_result.preview_data)
+                    write_result = self.ingest_relations_from_llm(
+                        project_id=project_id,
+                        data=relation_data,
+                        volume_number=volume_number,
+                        chapter_number=chapter_number,
+                    )
+                    task_result.written = write_result.get("written", 0)
+                    task_result.updated_relation_count = write_result.get("written", 0)
+                else:
+                    # 普通卡片提取
+                    write_result = self.apply_preview(
+                        extractor_code=task_result.task,
+                        project_id=project_id,
+                        data=task_result.preview_data,
+                        volume_number=volume_number,
+                        chapter_number=chapter_number,
+                    )
+                    task_result.written = write_result.get("written", 0)
+                    task_result.updated_card_count = write_result.get("updated_card_count", 0)
+                    task_result.updated_relation_count = write_result.get("updated_relation_count", 0)
+            except Exception as e:
+                logger.error(f"[apply_all] Failed for {task_result.task}: {e}")
+                task_result.success = False
+                task_result.message = f"写入失败: {str(e)}"
+
+            task_results.append(task_result)
+
+        # 计算汇总
+        total_written = sum(r.written for r in task_results)
+        total_cards = sum(r.updated_card_count for r in task_results)
+        total_relations = sum(r.updated_relation_count for r in task_results)
+
+        return {
+            "results": [r.model_dump() for r in task_results],
+            "total_written": total_written,
+            "total_updated_cards": total_cards,
+            "total_updated_relations": total_relations,
+        }

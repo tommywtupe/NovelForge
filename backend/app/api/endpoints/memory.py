@@ -7,8 +7,11 @@ from sqlmodel import Session
 from app.db.session import get_session
 from app.schemas.entity import UpdateDynamicInfo
 from app.schemas.memory import (
+	ApplyAllRequest,
 	ApplyPreviewRequest,
 	ApplyPreviewResponse,
+	ExtractAllRequest,
+	ExtractAllResponse,
 	ExtractOnlyRequest,
 	ExtractPreviewRequest,
 	ExtractPreviewResponse,
@@ -20,6 +23,7 @@ from app.schemas.memory import (
 	MemoryExtractorListResponse,
 	QueryRequest,
 	QueryResponse,
+	TaskResult,
 	UpdateDynamicInfoRequest,
 	UpdateDynamicInfoResponse,
 )
@@ -53,6 +57,18 @@ async def extract_preview(req: ExtractPreviewRequest, session: Session = Depends
 			volume_number=req.volume_number,
 			chapter_number=req.chapter_number,
 		)
+		# 如果 auto_apply 为 true，直接写入数据库
+		if req.auto_apply and req.project_id is not None:
+			apply_result = svc.apply_preview(
+				extractor_code=req.extractor_code,
+				project_id=req.project_id,
+				data=result["preview_data"],
+				volume_number=req.volume_number,
+				chapter_number=req.chapter_number,
+				participants=req.participants,
+			)
+			result["written"] = apply_result.get("written", 0)
+			result["updated_card_count"] = apply_result.get("updated_card_count", 0)
 		return ExtractPreviewResponse(**result)
 	except KeyError:
 		raise HTTPException(status_code=404, detail=f"未知抽取器: {req.extractor_code}")
@@ -190,3 +206,42 @@ def update_dynamic_info(req: UpdateDynamicInfoRequest, session: Session = Depend
 	except Exception as e:
 		logger.error(f"Failed to update dynamic info: {e}")
 		raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/extract-all", response_model=ExtractAllResponse, summary="一站式记忆提取（并行 LLM + 顺序 DB 写入）")
+async def extract_all(req: ExtractAllRequest, session: Session = Depends(get_session)):
+	svc = MemoryService(session)
+	try:
+		result = await svc.extract_all(
+			text=req.text,
+			project_id=req.project_id,
+			participants=req.participants,
+			llm_config_id=req.llm_config_id,
+			temperature=req.temperature,
+			max_tokens=req.max_tokens,
+			timeout=req.timeout,
+			extra_context=req.extra_context,
+			volume_number=req.volume_number,
+			chapter_number=req.chapter_number,
+			auto_apply=req.auto_apply,
+		)
+		return ExtractAllResponse(**result)
+	except Exception as e:
+		logger.error(f"extract_all failed: {e}")
+		raise HTTPException(status_code=500, detail=f"一站式提取失败: {e}")
+
+
+@router.post("/apply-all", response_model=ExtractAllResponse, summary="应用用户修改后的一站式提取结果")
+async def apply_all(req: ApplyAllRequest, session: Session = Depends(get_session)):
+	svc = MemoryService(session)
+	try:
+		result = await svc.apply_all(
+			project_id=req.project_id,
+			results=req.results,
+			volume_number=req.volume_number,
+			chapter_number=req.chapter_number,
+		)
+		return ExtractAllResponse(**result)
+	except Exception as e:
+		logger.error(f"apply_all failed: {e}")
+		raise HTTPException(status_code=500, detail=f"应用修改失败: {e}")

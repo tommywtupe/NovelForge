@@ -159,6 +159,7 @@ class StructuredCardMemoryExtractor:
         timeout: float | None = None,
         extra_context: str | None = None,
         context: dict[str, Any] | None = None,
+        filter_by_participants: bool = True,
     ) -> BaseModel:
         prompt = prompt_service.get_prompt_by_name(session, self.prompt_name)
         if not prompt:
@@ -204,7 +205,7 @@ class StructuredCardMemoryExtractor:
         if not isinstance(result, self.output_model):
             raise ValueError(f"{self.name}失败：输出格式不符合 {self.output_model.__name__}")
 
-        if target_names:
+        if filter_by_participants and target_names:
             allowed_names = {name.strip() for name in target_names if name.strip()}
             filtered_items = [
                 item for item in self.get_items(result)
@@ -227,6 +228,19 @@ class StructuredCardMemoryExtractor:
         if not card_type:
             raise ValueError(f"未找到卡片类型：{self.spec.card_type_name}")
 
+        # 从 context 获取 volume_number，用于查找父卡片（第X卷）
+        volume_number = context.get("volume_number") if context else None
+        parent_card_id: int | None = None
+        if volume_number is not None:
+            stmt = select(Card).where(
+                Card.project_id == project_id,
+                Card.card_type_id == 8,
+                Card.title == f"第{volume_number}卷",
+            )
+            parent_card = session.exec(stmt).first()
+            if parent_card:
+                parent_card_id = parent_card.id
+
         affected_card_ids: list[int] = []
         updated_card_count = 0
 
@@ -240,8 +254,18 @@ class StructuredCardMemoryExtractor:
                 Card.title == item_name,
             )
             card = session.exec(stmt).first()
+
             if not card:
-                continue
+                # 自动创建新卡片，设置 parent_id 为卷卡
+                card = Card(
+                    project_id=project_id,
+                    card_type_id=card_type.id,
+                    title=item_name,
+                    content={},
+                    parent_id=parent_card_id,
+                )
+                session.add(card)
+                session.flush()  # 获取 card.id
 
             existing = self.load_existing_card(card)
             merged = self.merge_card(existing, item)

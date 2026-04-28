@@ -29,6 +29,7 @@ class CharacterDynamicExtractor:
         timeout: float | None = None,
         extra_context: str | None = None,
         context: dict[str, Any] | None = None,
+        filter_by_participants: bool = True,
     ) -> UpdateDynamicInfo:
         return await service.extract_dynamic_info_preview(
             text=text,
@@ -39,6 +40,7 @@ class CharacterDynamicExtractor:
             timeout=timeout,
             project_id=project_id,
             extra_context=extra_context,
+            filter_by_participants=filter_by_participants,
         )
 
     def persist(
