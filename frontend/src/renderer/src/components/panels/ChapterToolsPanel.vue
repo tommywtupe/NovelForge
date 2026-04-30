@@ -38,10 +38,10 @@
 						<el-input-number v-model="editingConfig.temperature" :min="0" :max="2" :step="0.1" />
 					</el-form-item>
 					<el-form-item label="最大tokens">
-						<el-input-number v-model="editingConfig.max_tokens" :min="256" :max="32768" :step="256" />
+						<el-input-number v-model="editingConfig.max_tokens" :min="256" :max="131072" :step="256" />
 					</el-form-item>
 					<el-form-item label="超时(秒)">
-						<el-input-number v-model="editingConfig.timeout" :min="10" :max="600" :step="10" />
+						<el-input-number v-model="editingConfig.timeout" :min="10" :max="6000" :step="10" />
 					</el-form-item>
 					<el-form-item>
 						<div class="config-actions">
@@ -412,9 +412,9 @@ async function handleExtractConceptState() {
 async function handleExtractAll() {
 	await runExtraction('extract_all', async options => {
 		const result = await editorStore.triggerExtractAll(options)
-		// 从 store 获取结果并显示预览弹窗
-		if (editorStore.extractAllResult) {
-			extractAllPreviewData.value = editorStore.extractAllResult
+		// 直接使用返回的 result，不再检查 store（避免时序歧义）
+		if (result) {
+			extractAllPreviewData.value = result
 			extractAllPendingOptions.value = options
 			extractAllPreviewVisible.value = true
 		}
@@ -425,7 +425,7 @@ async function handleExtractAll() {
 function hasPreviewContent(previewData: Record<string, any> | undefined): boolean {
 	if (!previewData) return false
 	// 检查常见的列表字段
-	return ['scenes', 'organizations', 'items', 'concepts', 'relations'].some(
+	return ['scenes', 'organizations', 'items', 'concepts', 'relations', 'info_list'].some(
 		key => Array.isArray(previewData[key]) && previewData[key].length > 0
 	)
 }
@@ -440,7 +440,23 @@ function getPreviewTableData(result: ExtractAllResponse['results'][0]): Record<s
 	if (result.task === 'item_state') return data.items || []
 	if (result.task === 'concept_state') return data.concepts || []
 	if (result.task === 'relation') return data.relations || []
-	if (result.task === 'character_dynamic') return data.info_list || []
+	if (result.task === 'character_dynamic') {
+		// 将 dynamic_info 对象转换为可读字符串
+		// 原始: { name: "角色A", dynamic_info: { "状态": [{info:"受伤"}], "情绪": [{info:"高兴"}] } }
+		// 转换后: { name: "角色A", dynamic_info: "状态: 受伤; 情绪: 高兴" }
+		return (data.info_list || []).map((item: Record<string, any>) => {
+			const infoEntries = Object.entries(item.dynamic_info || {})
+				.map(([category, items]) => {
+					const infoTexts = (items as Array<{ info?: string }>).map(i => i.info).filter(Boolean).join('、')
+					return infoTexts ? `${category}: ${infoTexts}` : null
+				})
+				.filter(Boolean)
+			return {
+				name: item.name,
+				dynamic_info: infoEntries.join('; ') || '(无)',
+			}
+		})
+	}
 	return []
 }
 

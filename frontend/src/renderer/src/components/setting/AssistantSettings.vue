@@ -88,7 +88,7 @@ const assistantTimeout = computed({
         <el-input-number
           v-model="assistantMaxTokens"
           :min="-1"
-          :max="65536"
+          :max="131072"
           :step="512"
           controls-position="right"
           placeholder="-1"
