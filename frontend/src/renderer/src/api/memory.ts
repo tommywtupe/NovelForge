@@ -1,4 +1,4 @@
-import http from './request'
+import http, { aiHttpClient } from './request'
 import type { components } from '@renderer/types/generated'
 
 // 使用后端生成的类型（注意部分为 Input/Output 变体）
@@ -195,7 +195,7 @@ export interface ExtractAllResponse {
 }
 
 export function extractAll(data: ExtractAllRequest) {
-	return http.post<ExtractAllResponse>('/memory/extract-all', data, '/api', { showLoading: false })
+	return aiHttpClient.post<ExtractAllResponse>('/memory/extract-all', data, '/api', { showLoading: false })
 }
 
 export function applyAll(data: {

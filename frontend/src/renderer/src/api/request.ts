@@ -168,6 +168,6 @@ export default new HttpClient({
 
 export const aiHttpClient = new HttpClient({
   baseURL: BASE_URL,
-  timeout: 300000,
+  timeout: 6000000,
   headers: { 'Content-Type': 'application/json' }
 })

@@ -61,6 +61,7 @@ class StructuredCardExtractorSpec:
     target_participant_key: str
     related_participant_key: str
     reference_title: str
+    include_all_existing: bool = False
 
 
 class StructuredCardMemoryExtractor:
@@ -122,17 +123,26 @@ class StructuredCardMemoryExtractor:
         session: Session,
         project_id: int | None,
         target_names: list[str],
+        include_all_existing: bool = False,
     ) -> str | None:
-        if not project_id or not target_names:
+        if not project_id:
             return None
         card_type = session.exec(select(CardType).where(CardType.name == self.spec.card_type_name)).first()
         if not card_type:
             return None
-        stmt = select(Card).where(
-            Card.project_id == project_id,
-            Card.card_type_id == card_type.id,
-            Card.title.in_(target_names),
-        )
+        if include_all_existing:
+            stmt = select(Card).where(
+                Card.project_id == project_id,
+                Card.card_type_id == card_type.id,
+            )
+        else:
+            if not target_names:
+                return None
+            stmt = select(Card).where(
+                Card.project_id == project_id,
+                Card.card_type_id == card_type.id,
+                Card.title.in_(target_names),
+            )
         rows = session.exec(stmt).all()
         lines: list[str] = []
         for card in rows:
@@ -178,6 +188,7 @@ class StructuredCardMemoryExtractor:
             session=session,
             project_id=project_id,
             target_names=target_names,
+            include_all_existing=self.spec.include_all_existing,
         )
         if reference_block:
             ref_blocks.append(reference_block)
@@ -243,8 +254,13 @@ class StructuredCardMemoryExtractor:
 
         affected_card_ids: list[int] = []
         updated_card_count = 0
+        chapter_number = context.get("chapter_number") if context else None
 
         for item in self.get_items(data):
+            # 设置来源章节号
+            if chapter_number is not None and hasattr(item, 'chapter'):
+                item.chapter = chapter_number
+
             item_name = self.get_item_name(item)
             if not item_name:
                 continue
@@ -266,6 +282,7 @@ class StructuredCardMemoryExtractor:
                 )
                 session.add(card)
                 session.flush()  # 获取 card.id
+                self.on_new_card_created(item)
 
             existing = self.load_existing_card(card)
             merged = self.merge_card(existing, item)
@@ -292,6 +309,10 @@ class StructuredCardMemoryExtractor:
             for item in self.get_items(data)
             if self.get_item_name(item)
         ]
+
+    def on_new_card_created(self, item: Any) -> None:
+        """Hook called when a new card is created. Subclasses can override to set initial fields."""
+        pass
 
 class BaseMemoryExtractor(Protocol):
     code: str

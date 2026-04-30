@@ -15,7 +15,7 @@ def _merge_concept_card(existing: ConceptCard, incoming: ConceptCard) -> Concept
     return ConceptCard(
         name=incoming.name or existing.name,
         entity_type="concept",
-        life_span=incoming.life_span or existing.life_span,
+        life_span=existing.life_span,  # 保留原有的 lifespan，不覆盖
         category=merge_optional_text(existing.category, incoming.category) or "",
         description=merge_optional_text(existing.description, incoming.description) or "",
         rule_definition=merge_optional_text(existing.rule_definition, incoming.rule_definition) or "",
@@ -45,6 +45,7 @@ _SPEC = StructuredCardExtractorSpec(
     target_participant_key="concept_names",
     related_participant_key="related_entities",
     reference_title="已有概念卡参考",
+    include_all_existing=True,
 )
 
 
@@ -65,3 +66,7 @@ class ConceptStateExtractor(StructuredCardMemoryExtractor):
             f"  规则: {model.rule_definition or '未填写'}",
             f"  掌握提示: {model.mastery_hint or '未填写'}",
         ]
+
+    def on_new_card_created(self, item: ConceptCard) -> None:
+        """新建的概念卡设为短期，区分于手动创建的长期概念卡"""
+        item.life_span = "短期"

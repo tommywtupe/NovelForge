@@ -923,6 +923,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/extract-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 一站式记忆提取（并行 LLM + 顺序 DB 写入） */
+        post: operations["extract_all_api_memory_extract_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/apply-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 应用用户修改后的一站式提取结果 */
+        post: operations["apply_all_api_memory_apply_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/relation-graph/meta": {
         parameters: {
             query?: never;
@@ -1741,6 +1775,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/glossary/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Glossaries
+         * @description 获取项目的术语表列表
+         */
+        get: operations["list_glossaries_api_glossary_list_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/glossary/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract And Update Glossary
+         * @description 提取并更新术语表
+         *
+         *     支持四种模式：
+         *     - scan_new_concepts: 仅检测新概念
+         *     - translate_new_concepts: 仅为术语表中未翻译的项进行AI翻译
+         *     - full_rebuild_translations: 全量重建翻译
+         *     - scan_and_translate: 同时检测新概念和自动完成后续翻译
+         */
+        post: operations["extract_and_update_glossary_api_glossary_extract_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/glossary/{glossary_card_id}/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Terms
+         * @description 更新术语表的术语和元数据（手动调整）
+         */
+        put: operations["update_terms_api_glossary__glossary_card_id__terms_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/glossary/{glossary_card_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Glossary
+         * @description 删除术语表
+         */
+        delete: operations["remove_glossary_api_glossary__glossary_card_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/glossary/translate-terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Translate Terms
+         * @description 翻译术语表中的术语
+         */
+        post: operations["translate_terms_api_glossary_translate_terms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -1934,6 +2074,20 @@ export interface components {
             data?: boolean | null;
             /** Message */
             message?: string | null;
+        };
+        /**
+         * ApplyAllRequest
+         * @description 应用修改后的一站式提取结果
+         */
+        ApplyAllRequest: {
+            /** Project Id */
+            project_id: number;
+            /** Results */
+            results?: components["schemas"]["TaskResult"][];
+            /** Volume Number */
+            volume_number?: number | null;
+            /** Chapter Number */
+            chapter_number?: number | null;
         };
         /** ApplyPreviewRequest */
         ApplyPreviewRequest: {
@@ -2605,6 +2759,66 @@ export interface components {
              * @description 简要描述具体动态信息
              */
             info: string;
+            /**
+             * Chapter
+             * @description 来源章节号，0表示未知章节
+             * @default 0
+             */
+            chapter: number;
+        };
+        /** ExtractAllRequest */
+        ExtractAllRequest: {
+            /** Project Id */
+            project_id?: number | null;
+            /** Text */
+            text: string;
+            /** Participants */
+            participants?: components["schemas"]["ParticipantTyped"][] | null;
+            /**
+             * Llm Config Id
+             * @default 1
+             */
+            llm_config_id: number;
+            /** Temperature */
+            temperature?: number | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Timeout */
+            timeout?: number | null;
+            /** Extra Context */
+            extra_context?: string | null;
+            /** Volume Number */
+            volume_number?: number | null;
+            /** Chapter Number */
+            chapter_number?: number | null;
+            /**
+             * Auto Apply
+             * @default false
+             */
+            auto_apply: boolean;
+        };
+        /**
+         * ExtractAllResponse
+         * @description 一站式记忆提取响应
+         */
+        ExtractAllResponse: {
+            /** Results */
+            results?: components["schemas"]["TaskResult"][];
+            /**
+             * Total Written
+             * @default 0
+             */
+            total_written: number;
+            /**
+             * Total Updated Cards
+             * @default 0
+             */
+            total_updated_cards: number;
+            /**
+             * Total Updated Relations
+             * @default 0
+             */
+            total_updated_relations: number;
         };
         /** ExtractOnlyRequest */
         ExtractOnlyRequest: {
@@ -2655,6 +2869,11 @@ export interface components {
             volume_number?: number | null;
             /** Chapter Number */
             chapter_number?: number | null;
+            /**
+             * Auto Apply
+             * @default false
+             */
+            auto_apply: boolean;
         };
         /** ExtractPreviewResponse */
         ExtractPreviewResponse: {
@@ -2668,6 +2887,10 @@ export interface components {
             affected_targets?: {
                 [key: string]: unknown;
             }[];
+            /** Written */
+            written?: number | null;
+            /** Updated Card Count */
+            updated_card_count?: number | null;
         };
         /** ExtractRelationsRequest */
         ExtractRelationsRequest: {
@@ -2864,6 +3087,104 @@ export interface components {
             custom?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * GlossaryTerm
+         * @description 翻译术语表中的单个术语
+         */
+        GlossaryTerm: {
+            /**
+             * Source
+             * @description 原文
+             */
+            source: string;
+            /**
+             * Translated
+             * @description 翻译
+             */
+            translated: string;
+            /**
+             * Category
+             * @description 术语来源类别
+             * @default other
+             * @enum {string}
+             */
+            category: "character" | "scene" | "organization" | "item" | "concept" | "other";
+            /**
+             * Source Card Id
+             * @description 来源卡片ID，为空表示手动添加
+             */
+            source_card_id?: number | null;
+            /**
+             * Notes
+             * @description 备注说明
+             */
+            notes?: string | null;
+        };
+        /**
+         * GlossaryTermExtractionRequest
+         * @description 术语提取请求
+         */
+        GlossaryTermExtractionRequest: {
+            /**
+             * Project Id
+             * @description 项目ID
+             */
+            project_id: number;
+            /**
+             * Target Language
+             * @description 目标语言
+             * @enum {string}
+             */
+            target_language: "繁體中文" | "日文" | "英文" | "韓文";
+            /**
+             * Glossary Card Id
+             * @description 现有术语表卡片ID，用于增量更新
+             */
+            glossary_card_id?: number | null;
+            /**
+             * Llm Config Id
+             * @description LLM配置ID，用于自动翻译模式
+             */
+            llm_config_id?: number | null;
+            /**
+             * Update Mode
+             * @description 更新模式
+             * @default scan_and_translate
+             * @enum {string}
+             */
+            update_mode: "scan_new_concepts" | "translate_new_concepts" | "full_rebuild_translations" | "scan_and_translate";
+        };
+        /**
+         * GlossaryTermExtractionResponse
+         * @description 术语提取响应
+         */
+        GlossaryTermExtractionResponse: {
+            /**
+             * Terms
+             * @description 提取的术语列表
+             */
+            terms: components["schemas"]["GlossaryTerm"][];
+            /**
+             * New Terms Count
+             * @description 新增术语数量
+             */
+            new_terms_count: number;
+            /**
+             * Updated Terms Count
+             * @description 更新的术语数量
+             */
+            updated_terms_count: number;
+            /**
+             * Removed Terms Count
+             * @description 删除的术语数量
+             */
+            removed_terms_count: number;
+            /**
+             * Glossary Card Id
+             * @description 术语表卡片ID
+             */
+            glossary_card_id: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3122,6 +3443,13 @@ export interface components {
              * @default 0
              */
             used_calls: number | null;
+            /**
+             * Thinking
+             * @default true
+             */
+            thinking: boolean | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
         };
         /** LLMConfigRead */
         LLMConfigRead: {
@@ -3182,6 +3510,13 @@ export interface components {
              * @default 0
              */
             used_calls: number | null;
+            /**
+             * Thinking
+             * @default true
+             */
+            thinking: boolean | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
             /** Id */
             id: number;
         };
@@ -3219,6 +3554,10 @@ export interface components {
             used_tokens_output?: number | null;
             /** Used Calls */
             used_calls?: number | null;
+            /** Thinking */
+            thinking?: boolean | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
         };
         /** LLMConnectionTest */
         LLMConnectionTest: {
@@ -3801,19 +4140,24 @@ export interface components {
             b_to_a_addressing?: string | null;
             /**
              * Recent Dialogues
-             * @description 近期对话片段（建议包含双方各至少一句，可用 A:“…”, B:“…” 合并片段；长度≥20字）。仅当 A, B 均为角色时提取。
+             * @description 近期对话片段（建议包含双方各至少一句，可用 A:"…", B:"…" 合并片段；长度≥20字）。仅当 A, B 均为角色时提取。
              */
-            recent_dialogues?: string[];
+            recent_dialogues?: string[] | null;
             /**
              * Recent Event Summaries
              * @description 近期 A 与 B 直接发生在彼此之间的事件；若同一事实涉及三方或以上，仅在最直接的一对上记录一次。优先记录角色-角色的配对；当事件主体确系 A 与 B 为角色-组织/组织-组织时再记录相应关系，避免将组织背景误当作双边事件。
              */
-            recent_event_summaries?: components["schemas"]["RecentEventSummary"][];
+            recent_event_summaries?: components["schemas"]["RecentEventSummary"][] | null;
             /**
              * Stance
              * @description A 对 B 的总体立场（可选）
              */
             stance?: ("友好" | "中立" | "敌意") | null;
+            /**
+             * Chapter
+             * @description 来源章节号
+             */
+            chapter?: number | null;
         };
         /** ReviewCardUpsertRequest */
         ReviewCardUpsertRequest: {
@@ -4082,6 +4426,87 @@ export interface components {
              */
             affection: string;
         };
+        /**
+         * TaskResult
+         * @description 单个提取任务的结果
+         */
+        TaskResult: {
+            /** Task */
+            task: string;
+            /** Name */
+            name: string;
+            /** Success */
+            success: boolean;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Preview Data */
+            preview_data?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Written
+             * @default 0
+             */
+            written: number;
+            /**
+             * Updated Card Count
+             * @default 0
+             */
+            updated_card_count: number;
+            /**
+             * Updated Relation Count
+             * @default 0
+             */
+            updated_relation_count: number;
+        };
+        /**
+         * TranslateTermsRequest
+         * @description 术语翻译请求
+         */
+        TranslateTermsRequest: {
+            /**
+             * Terms
+             * @description 待翻译的术语列表（仅包含原文）
+             */
+            terms: string[];
+            /**
+             * Target Language
+             * @description 目标语言
+             * @enum {string}
+             */
+            target_language: "繁體中文" | "日文" | "英文" | "韓文";
+            /**
+             * Llm Config Id
+             * @description LLM配置ID
+             */
+            llm_config_id: number;
+            /**
+             * Glossary Card Id
+             * @description 术语表卡片ID（用于获取已有翻译保证一致性）
+             */
+            glossary_card_id: number;
+            /**
+             * Project Id
+             * @description 项目ID（用于获取作品背景上下文）
+             */
+            project_id: number;
+        };
+        /**
+         * TranslateTermsResponse
+         * @description 术语翻译响应
+         */
+        TranslateTermsResponse: {
+            /**
+             * Translations
+             * @description 翻译结果列表，每项包含 source 和 translated
+             */
+            translations: {
+                [key: string]: unknown;
+            }[];
+        };
         /** UpdateDynamicInfo */
         "UpdateDynamicInfo-Input": {
             /**
@@ -4126,6 +4551,18 @@ export interface components {
             /** Updated Card Count */
             updated_card_count: number;
         };
+        /**
+         * UpdateGlossaryRequest
+         * @description 更新术语表的请求
+         */
+        UpdateGlossaryRequest: {
+            /** Terms */
+            terms: components["schemas"]["GlossaryTerm"][];
+            /** Name */
+            name?: string | null;
+            /** Target Language */
+            target_language?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -4134,6 +4571,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /** WorkflowAgentChatRequest */
         WorkflowAgentChatRequest: {
@@ -6596,6 +7037,72 @@ export interface operations {
             };
         };
     };
+    extract_all_api_memory_extract_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtractAllRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractAllResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_all_api_memory_apply_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyAllRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractAllResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_meta_api_relation_graph_meta_get: {
         parameters: {
             query?: never;
@@ -8035,6 +8542,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowPatchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_glossaries_api_glossary_list_get: {
+        parameters: {
+            query: {
+                /** @description 项目ID */
+                project_id: number;
+                /** @description 目标语言过滤 */
+                target_language?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_and_update_glossary_api_glossary_extract_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlossaryTermExtractionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlossaryTermExtractionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_terms_api_glossary__glossary_card_id__terms_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                glossary_card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGlossaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_glossary_api_glossary__glossary_card_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                glossary_card_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    translate_terms_api_glossary_translate_terms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranslateTermsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranslateTermsResponse"];
                 };
             };
             /** @description Validation Error */

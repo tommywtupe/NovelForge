@@ -267,6 +267,7 @@ export const useEditorStore = defineStore('editor', () => {
       extractAllResult.value = result || null
       return result
     }
+    return null
   }
 
   function setExtractAllResult(result: Record<string, any> | null) {

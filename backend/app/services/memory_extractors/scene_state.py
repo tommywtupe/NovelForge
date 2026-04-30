@@ -49,6 +49,7 @@ _SPEC = StructuredCardExtractorSpec(
     target_participant_key="scene_names",
     related_participant_key="related_entities",
     reference_title="已有场景卡参考",
+    include_all_existing=True,
 )
 
 

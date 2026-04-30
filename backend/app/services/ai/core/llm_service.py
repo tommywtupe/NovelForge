@@ -204,10 +204,10 @@ async def _generate_structured_native(
                 session=session,
                 llm_config_id=llm_config_id,
                 temperature=temperature or 0.7,
-                max_tokens=16384 if max_tokens is None else max_tokens,
+                max_tokens=131072 if max_tokens is None else max_tokens,
                 timeout=timeout or 150,
                 thinking_enabled=False,  
-                reasoning_effort="max",  
+                # reasoning_effort="max", 
             )
 
             structured_llm = model.with_structured_output(output_type)
@@ -440,6 +440,8 @@ async def _stream_continuation_single_round(
         temperature=request.temperature or 0.7,
         max_tokens=round_plan.max_tokens,
         timeout=request.timeout or 64,
+        thinking_enabled=True,
+        reasoning_effort="max", 
     )
 
     messages = [

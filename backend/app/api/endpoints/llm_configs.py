@@ -56,7 +56,7 @@ async def get_models_endpoint(request: LLMGetModelsRequest):
     models: list[str] = []
 
     try:
-        if provider in {"openai_compatible", "openai"}:
+        if provider in {"openai_compatible", "openai", "deepseek"}:
             transport = llm_config_service.resolve_transport_settings(
                 provider=provider,
                 api_base=request.api_base,

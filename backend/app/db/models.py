@@ -67,7 +67,7 @@ class LLMConfig(SQLModel, table=True):
         default=True,
         sa_column=Column(sa.Boolean, nullable=False, server_default='1')
     )
-    reasoning_effort: Optional[str] = Field(default=None)  # low, medium, high
+    reasoning_effort: Optional[str] = Field(default="max")  # low, medium, high, max
 
 
 class Prompt(SQLModel, table=True):

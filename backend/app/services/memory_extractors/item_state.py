@@ -45,6 +45,7 @@ _SPEC = StructuredCardExtractorSpec(
     target_participant_key="item_names",
     related_participant_key="owner_names",
     reference_title="已有物品卡参考",
+    include_all_existing=True,
 )
 
 

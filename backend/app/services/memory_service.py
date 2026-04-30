@@ -523,10 +523,14 @@ class MemoryService:
             return '关于'
 
         for r in (data.relations or []):
+            # 设置来源章节号
+            if not r.chapter and chapter_number:
+                r.chapter = chapter_number
+
             pred = CN_TO_EN_KIND.get(r.kind or '', '')
             if not pred:
                 continue
-            
+
             # 使用传入的类型信息，如果缺失则回退到猜测
             type_a = participant_type_map.get(r.a) or _guess_entity_type(self.session, project_id, r.a)
             type_b = participant_type_map.get(r.b) or _guess_entity_type(self.session, project_id, r.b)
@@ -629,7 +633,7 @@ class MemoryService:
         
         return {"written": len(triples_with_attrs), "merged_evidence": merged_evidence_map} 
 
-    def update_dynamic_character_info(self, project_id: int, data: UpdateDynamicInfo, queue_size: int = 3) -> Dict[str, Any]:
+    def update_dynamic_character_info(self, project_id: int, data: UpdateDynamicInfo, queue_size: int = 3, context: Dict[str, Any] | None = None) -> Dict[str, Any]:
         """
         更新角色卡的动态信息，支持新增、删除。
         每个类别的最大数量使用 DYNAMIC_INFO_LIMITS 中的配置；若未配置，则回退到 queue_size（默认3）。
@@ -674,6 +678,7 @@ class MemoryService:
 
         # 处理新增
         # (和之前类似，但要确保在已更新的 card 对象上操作)
+        chapter_number = context.get('chapter_number') if context else None
         for info_group in data.info_list:
             card = updated_cards.get(info_group.name) or card_map.get(info_group.name)
             if not card:
@@ -698,6 +703,9 @@ class MemoryService:
                         # 将占位或缺失ID暂记为 0，稍后统一分配正数ID
                         if not isinstance(new_item.id, int) or new_item.id <= 0:
                             new_item.id = 0
+                        # 设置来源章节号
+                        if chapter_number is not None:
+                            new_item.chapter = chapter_number
                         existing_items.append(new_item)
                     
                     # 统一ID规范化：为所有 <=0 的条目分配连续正数ID（不改变已有正数ID）
@@ -869,7 +877,7 @@ class MemoryService:
         total_written = sum(r.written for r in task_results)
         total_cards = sum(r.updated_card_count for r in task_results)
         total_relations = sum(r.updated_relation_count for r in task_results)
-
+        logger.info("[extract_all] Phase finish")
         return {
             "results": [r.model_dump() for r in task_results],
             "total_written": total_written,

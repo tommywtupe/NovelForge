@@ -32,6 +32,7 @@ EntityType = Literal["character", "scene", "organization", "item", "concept"]
 class DynamicInfoItem(BaseModel):
     id: int = Field(-1, description="手动设置，无需生成；并入时若为 -1 将自动分配顺序号")
     info: str = Field(description="简要描述具体动态信息")
+    chapter: int = Field(default=0, description="来源章节号，0表示未知章节")
 
 
 class DynamicInfo(BaseModel):
@@ -133,6 +134,7 @@ class SceneCardMemory(Entity):
     description: str = Field(default="", description="scene description")
     function_in_story: str = Field(default="", description="scene function in story")
     dynamic_state: List[str] = Field(default_factory=list, description="scene dynamic state summary")
+    chapter: Optional[int] = Field(default=None, description="来源章节号")
 
 
 class OrganizationCardMemory(Entity):
@@ -142,6 +144,7 @@ class OrganizationCardMemory(Entity):
     influence: Optional[str] = Field(default=None, description="organization influence")
     relationship: List[str] = Field(default_factory=list, description="organization relationships")
     dynamic_state: List[str] = Field(default_factory=list, description="organization dynamic state summary")
+    chapter: Optional[int] = Field(default=None, description="来源章节号")
 
 
 class ItemCard(Entity):
@@ -158,6 +161,7 @@ class ItemCard(Entity):
     constraints: Optional[str] = Field(default=None, description="使用限制、代价或触发条件")
     current_state: Optional[str] = Field(default=None, description="物品当前状态")
     important_events: List[str] = Field(default_factory=list, description="与物品相关的重要事件摘要")
+    chapter: Optional[int] = Field(default=None, description="来源章节号")
 
 class ConceptCard(Entity):
     entity_type: EntityType = Field("concept", description="实体类型")
@@ -173,6 +177,7 @@ class ConceptCard(Entity):
     counter_relations: List[str] = Field(default_factory=list, description="对立、克制或限制关系")
     mastery_hint: Optional[str] = Field(default=None, description="掌握门槛、领悟方式或常见使用者")
     known_by: List[str] = Field(default_factory=list, description="已知掌握、知晓或受影响的实体")
+    chapter: Optional[int] = Field(default=None, description="来源章节号")
 
 
 class GlossaryTerm(BaseModel):

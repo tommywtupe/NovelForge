@@ -58,6 +58,7 @@ class CharacterDynamicExtractor:
             project_id=project_id,
             data=data,
             queue_size=queue_size,
+            context=context,
         )
         result.setdefault("written", result.get("updated_card_count", 0))
         return result

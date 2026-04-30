@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Optional, Literal, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 
@@ -74,10 +74,19 @@ class RelationItem(BaseModel):
     a_to_b_addressing: Optional[str] = Field(default=None, description="A 对 B 的称呼词，如：师兄、先生。仅当 A, B 均为角色时提取。")
     b_to_a_addressing: Optional[str] = Field(default=None, description="B 对 A 的称呼词。仅当 A, B 均为角色时提取。")
     # 近期证据（用于语气一致性与事实回溯）——建议各 ≤3 条
-    recent_dialogues: List[str] = Field(default_factory=list, description="近期对话片段（建议包含双方各至少一句，可用 A:“…”, B:“…” 合并片段；长度≥20字）。仅当 A, B 均为角色时提取。")
-    recent_event_summaries: List[RecentEventSummary] = Field(default_factory=list, description="近期 A 与 B 直接发生在彼此之间的事件；若同一事实涉及三方或以上，仅在最直接的一对上记录一次。优先记录角色-角色的配对；当事件主体确系 A 与 B 为角色-组织/组织-组织时再记录相应关系，避免将组织背景误当作双边事件。")
+    recent_dialogues: Optional[List[str]] = Field(default=None, description='近期对话片段（建议包含双方各至少一句，可用 A:"…", B:"…" 合并片段；长度≥20字）。仅当 A, B 均为角色时提取。')
+    recent_event_summaries: Optional[List[RecentEventSummary]] = Field(default=None, description="近期 A 与 B 直接发生在彼此之间的事件；若同一事实涉及三方或以上，仅在最直接的一对上记录一次。优先记录角色-角色的配对；当事件主体确系 A 与 B 为角色-组织/组织-组织时再记录相应关系，避免将组织背景误当作双边事件。")
     # 立场（可选）：友好/中立/敌意
     stance: Optional[RelationStance] = Field(default=None, description="A 对 B 的总体立场（可选）")
+    # 来源章节
+    chapter: Optional[int] = Field(default=None, description="来源章节号")
+
+    @field_validator('recent_dialogues', 'recent_event_summaries', mode='before')
+    @classmethod
+    def convert_none_to_list(cls, v):
+        if v is None:
+            return []
+        return v
 
 
 class RelationExtraction(BaseModel):

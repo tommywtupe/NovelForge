@@ -6,6 +6,7 @@
 from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
+from langchain_deepseek import ChatDeepSeek
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_qwq import ChatQwen
@@ -76,6 +77,7 @@ def build_chat_model_from_payload(
         user_agent=user_agent,
     )
     provider_name = transport["provider"]
+    print("provider_name",provider_name)
     common_kwargs = _sanitize_common_generation_kwargs(
         temperature=temperature,
         max_tokens=max_tokens,
@@ -132,6 +134,23 @@ def build_chat_model_from_payload(
         if common_kwargs.get("timeout") is not None:
             model_kwargs["timeout"] = common_kwargs["timeout"]
         return ChatGoogleGenerativeAI(**model_kwargs)
+
+    if provider_name == "deepseek":
+        model_kwargs = {
+            "model": model_name,
+            "api_key": api_key,
+            **_build_openai_family_transport_kwargs(transport),
+            **common_kwargs,
+        }
+        if thinking_enabled is not None:
+            model_kwargs["extra_body"] = {
+                "thinking": {
+                    "type": "enabled" if thinking_enabled else "disabled"
+                },
+                **({"reasoning_effort": reasoning_effort} if reasoning_effort else {})
+            }
+        print("using ChatDeepSeek", model_kwargs)
+        return ChatDeepSeek(**model_kwargs, disabled_params={"tool_choice": None})
 
     raise ValueError(f"不支持的 LLM 提供商: {provider}")
 
