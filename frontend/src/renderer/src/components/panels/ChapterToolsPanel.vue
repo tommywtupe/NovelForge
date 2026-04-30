@@ -412,9 +412,9 @@ async function handleExtractConceptState() {
 async function handleExtractAll() {
 	await runExtraction('extract_all', async options => {
 		const result = await editorStore.triggerExtractAll(options)
-		// 直接使用返回的 result，不再检查 store（避免时序歧义）
-		if (result) {
-			extractAllPreviewData.value = result
+		// 从 store 获取结果并显示预览弹窗
+		if (editorStore.extractAllResult) {
+			extractAllPreviewData.value = editorStore.extractAllResult
 			extractAllPendingOptions.value = options
 			extractAllPreviewVisible.value = true
 		}
@@ -425,7 +425,7 @@ async function handleExtractAll() {
 function hasPreviewContent(previewData: Record<string, any> | undefined): boolean {
 	if (!previewData) return false
 	// 检查常见的列表字段
-	return ['scenes', 'organizations', 'items', 'concepts', 'relations', 'info_list'].some(
+	return ['scenes', 'organizations', 'items', 'concepts', 'relations'].some(
 		key => Array.isArray(previewData[key]) && previewData[key].length > 0
 	)
 }
@@ -440,23 +440,7 @@ function getPreviewTableData(result: ExtractAllResponse['results'][0]): Record<s
 	if (result.task === 'item_state') return data.items || []
 	if (result.task === 'concept_state') return data.concepts || []
 	if (result.task === 'relation') return data.relations || []
-	if (result.task === 'character_dynamic') {
-		// 将 dynamic_info 对象转换为可读字符串
-		// 原始: { name: "角色A", dynamic_info: { "状态": [{info:"受伤"}], "情绪": [{info:"高兴"}] } }
-		// 转换后: { name: "角色A", dynamic_info: "状态: 受伤; 情绪: 高兴" }
-		return (data.info_list || []).map((item: Record<string, any>) => {
-			const infoEntries = Object.entries(item.dynamic_info || {})
-				.map(([category, items]) => {
-					const infoTexts = (items as Array<{ info?: string }>).map(i => i.info).filter(Boolean).join('、')
-					return infoTexts ? `${category}: ${infoTexts}` : null
-				})
-				.filter(Boolean)
-			return {
-				name: item.name,
-				dynamic_info: infoEntries.join('; ') || '(无)',
-			}
-		})
-	}
+	if (result.task === 'character_dynamic') return data.info_list || []
 	return []
 }
 
