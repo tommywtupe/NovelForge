@@ -35,18 +35,36 @@ const effectiveSchema = computed<JSONSchema>(() => {
   const hasProps = sch && typeof sch === 'object' && (sch as any).properties && Object.keys((sch as any).properties as any).length > 0
   if (hasProps) return sch
   const dataKeys = Object.keys(props.modelValue || {})
-  if (dataKeys.length === 0) return sch
   const itemSchema: JSONSchema = {
     type: 'object',
     title: 'Item',
     properties: {
       id: { type: 'integer', title: 'id' },
-      info: { type: 'string', title: 'info' }
+      info: { type: 'string', title: '信息' },
+      chapter: { type: 'integer', title: '章节' },
     },
   }
   const propsMap: Record<string, JSONSchema> = {}
-  for (const k of dataKeys) {
+
+  // 始终包含所有动态信息类型，即使当前没有数据
+  const allDynamicInfoTypes = [
+    '系统/模拟器/金手指信息',
+    '等级/修为境界',
+    '装备/法宝',
+    '知识/情报',
+    '资产/领地',
+    '功法/技能',
+    '血脉/体质',
+    '心理想法/目标快照',
+  ]
+  for (const k of allDynamicInfoTypes) {
     propsMap[k] = { type: 'array', items: itemSchema, title: k }
+  }
+  // 额外添加数据中存在但不在列表中的键
+  for (const k of dataKeys) {
+    if (!propsMap[k]) {
+      propsMap[k] = { type: 'array', items: itemSchema, title: k }
+    }
   }
   return { ...sch, type: 'object', properties: propsMap }
 })

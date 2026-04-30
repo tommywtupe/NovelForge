@@ -41,6 +41,8 @@ class CharacterDynamicExtractor:
             project_id=project_id,
             extra_context=extra_context,
             filter_by_participants=filter_by_participants,
+            volume_number=context.get('volume_number') if context else None,
+            chapter_number=context.get('chapter_number') if context else None,
         )
 
     def persist(

@@ -78,7 +78,8 @@ class RelationItem(BaseModel):
     recent_event_summaries: Optional[List[RecentEventSummary]] = Field(default=None, description="近期 A 与 B 直接发生在彼此之间的事件；若同一事实涉及三方或以上，仅在最直接的一对上记录一次。优先记录角色-角色的配对；当事件主体确系 A 与 B 为角色-组织/组织-组织时再记录相应关系，避免将组织背景误当作双边事件。")
     # 立场（可选）：友好/中立/敌意
     stance: Optional[RelationStance] = Field(default=None, description="A 对 B 的总体立场（可选）")
-    # 来源章节
+    # 来源卷章节
+    volume_number: Optional[int] = Field(default=None, description="来源卷号")
     chapter: Optional[int] = Field(default=None, description="来源章节号")
 
     @field_validator('recent_dialogues', 'recent_event_summaries', mode='before')

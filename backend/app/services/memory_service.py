@@ -207,6 +207,8 @@ class MemoryService:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         filter_by_participants: bool = True,
+        volume_number: Optional[int] = None,
+        chapter_number: Optional[int] = None,
     ) -> RelationExtraction:
         prompt = prompt_service.get_prompt_by_name(self.session, prompt_name)
         system_prompt = prompt.template
@@ -215,7 +217,15 @@ class MemoryService:
         system_prompt += f"\n\n请严格按以下 JSON Schema 格式输出:\n{schema_json}"
 
         participant_names = [p.name for p in participants] if participants else []
+
+        # 构建卷章节提示
+        chapter_hint = ""
+        if chapter_number is not None:
+            vol_str = f"第{volume_number}卷 " if volume_number is not None else ""
+            chapter_hint = f"【重要】当前处理的是{vol_str}第{chapter_number}章。请将正确的卷号和章节号分别填入输出的 volume_number 和 chapter(或chapter_number) 字段。\n\n"
+
         user_prompt = (
+            f"{chapter_hint}"
             f"参与者: {', '.join(participant_names)}\n\n"
             "请从以下正文中提取:\n"
             f"{text}"
@@ -248,6 +258,8 @@ class MemoryService:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         filter_by_participants: bool = True,
+        volume_number: Optional[int] = None,
+        chapter_number: Optional[int] = None,
     ) -> UpdateDynamicInfo:
         prompt = prompt_service.get_prompt_by_name(self.session, prompt_name)
         if not prompt:
@@ -300,8 +312,13 @@ class MemoryService:
                 "本章当前参与角色（仅作优先参考，不是硬限制；如果正文里明确出现了其他重要角色，也可以提取）：\n"
                 f"{', '.join([p.name for p in character_participants])}\n\n"
             )
+        chapter_hint = ""
+        if chapter_number is not None:
+            vol_str = f"第{volume_number}卷 " if volume_number is not None else ""
+            chapter_hint = f"【重要】当前处理的是{vol_str}第{chapter_number}章。请将正确的章节号填入输出的 chapter 字段。\n\n"
         user_prompt = (
             f"{ref_text}"
+            f"{chapter_hint}"
             f"章节正文:\n{text}\n\n"
             f"{participant_text}"
             "请从以上正文中提取本章值得写回角色卡的动态信息。"
@@ -523,9 +540,11 @@ class MemoryService:
             return '关于'
 
         for r in (data.relations or []):
-            # 设置来源章节号
+            # 设置来源卷章节号
             if not r.chapter and chapter_number:
                 r.chapter = chapter_number
+            if not r.volume_number and volume_number:
+                r.volume_number = volume_number
 
             pred = CN_TO_EN_KIND.get(r.kind or '', '')
             if not pred:
@@ -703,9 +722,6 @@ class MemoryService:
                         # 将占位或缺失ID暂记为 0，稍后统一分配正数ID
                         if not isinstance(new_item.id, int) or new_item.id <= 0:
                             new_item.id = 0
-                        # 设置来源章节号
-                        if chapter_number is not None:
-                            new_item.chapter = chapter_number
                         existing_items.append(new_item)
                     
                     # 统一ID规范化：为所有 <=0 的条目分配连续正数ID（不改变已有正数ID）

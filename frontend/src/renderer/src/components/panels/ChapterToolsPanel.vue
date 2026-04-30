@@ -193,7 +193,11 @@
 									:label="col.label"
 									:min-width="col.width || 120"
 									show-overflow-tooltip
-								/>
+								>
+									<template v-if="result.task === 'character_dynamic' && col.prop === 'dynamic_info'" #default="{ row }">
+										<div style="white-space: pre-wrap; line-height: 1.6;">{{ row.dynamic_info }}</div>
+									</template>
+								</el-table-column>
 							</el-table>
 							<div class="preview-summary">
 								共 {{ getPreviewTableData(result).length }} 条记录
@@ -425,7 +429,7 @@ async function handleExtractAll() {
 function hasPreviewContent(previewData: Record<string, any> | undefined): boolean {
 	if (!previewData) return false
 	// 检查常见的列表字段
-	return ['scenes', 'organizations', 'items', 'concepts', 'relations'].some(
+	return ['scenes', 'organizations', 'items', 'concepts', 'relations', 'info_list'].some(
 		key => Array.isArray(previewData[key]) && previewData[key].length > 0
 	)
 }
@@ -440,7 +444,26 @@ function getPreviewTableData(result: ExtractAllResponse['results'][0]): Record<s
 	if (result.task === 'item_state') return data.items || []
 	if (result.task === 'concept_state') return data.concepts || []
 	if (result.task === 'relation') return data.relations || []
-	if (result.task === 'character_dynamic') return data.info_list || []
+	if (result.task === 'character_dynamic') {
+		// 将 DynamicInfo 扁平化为表格可显示格式
+		return (data.info_list || []).map((item: Record<string, any>) => {
+			const dynamicInfo = item.dynamic_info || {}
+			// 将动态信息字典转换为可读字符串
+			const infoParts: string[] = []
+			for (const [type, items] of Object.entries(dynamicInfo)) {
+				if (Array.isArray(items) && items.length > 0) {
+					const itemStrs = (items as Array<{ info?: string }>).map(it => it.info || '').filter(Boolean)
+					if (itemStrs.length > 0) {
+						infoParts.push(`${type}: ${itemStrs.join('; ')}`)
+					}
+				}
+			}
+			return {
+				name: item.name || '',
+				dynamic_info: infoParts.join('\n') || '无动态信息',
+			}
+		})
+	}
 	return []
 }
 

@@ -195,8 +195,19 @@ class StructuredCardMemoryExtractor:
 
         ref_text = ("\n\n".join(ref_blocks) + "\n\n") if ref_blocks else ""
         participant_desc = self.build_participant_payload(target_names, related_names, participants)
+
+        # 构建章节提示
+        chapter_hint = ""
+        if context:
+            vol_num = context.get("volume_number")
+            ch_num = context.get("chapter_number")
+            if ch_num is not None:
+                vol_str = f"第{vol_num}卷 " if vol_num is not None else ""
+                chapter_hint = f"【重要】当前处理的是{vol_str}第{ch_num}章。请将正确的章节号填入输出的 chapter 字段。\n\n"
+
         user_prompt = (
             f"{ref_text}"
+            f"{chapter_hint}"
             f"参与实体信息：{participant_desc}\n\n"
             f"章节正文如下：\n{text}\n"
         )
@@ -257,8 +268,8 @@ class StructuredCardMemoryExtractor:
         chapter_number = context.get("chapter_number") if context else None
 
         for item in self.get_items(data):
-            # 设置来源章节号
-            if chapter_number is not None and hasattr(item, 'chapter'):
+            # 只有当 item.chapter 为空/None 时，才用 context 中的 chapter_number
+            if hasattr(item, 'chapter') and item.chapter is None and chapter_number is not None:
                 item.chapter = chapter_number
 
             item_name = self.get_item_name(item)

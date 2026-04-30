@@ -704,6 +704,11 @@
 								<el-button type="danger" text size="small" @click="removeMemoryCardPreviewItem('scenes', $index, row)">删除</el-button>
 							</template>
 						</el-table-column>
+						<el-table-column label="章节" width="70" align="center">
+							<template #default="{ row }">
+								{{ row.chapter ?? '-' }}
+							</template>
+						</el-table-column>
 					</el-table>
 				</div>
 
@@ -806,6 +811,11 @@
 						<el-table-column label="操作" width="90">
 							<template #default="{ row, $index }">
 								<el-button type="danger" text size="small" @click="removeMemoryCardPreviewItem('organizations', $index, row)">删除</el-button>
+							</template>
+						</el-table-column>
+						<el-table-column label="章节" width="70" align="center">
+							<template #default="{ row }">
+								{{ row.chapter ?? '-' }}
 							</template>
 						</el-table-column>
 					</el-table>
@@ -963,6 +973,11 @@
 								<el-button type="danger" text size="small" @click="removeMemoryCardPreviewItem('items', $index, row)">删除</el-button>
 							</template>
 						</el-table-column>
+						<el-table-column label="章节" width="70" align="center">
+							<template #default="{ row }">
+								{{ row.chapter ?? '-' }}
+							</template>
+						</el-table-column>
 					</el-table>
 				</div>
 
@@ -1118,6 +1133,11 @@
 						<el-table-column label="操作" width="90">
 							<template #default="{ row, $index }">
 								<el-button type="danger" text size="small" @click="removeMemoryCardPreviewItem('concepts', $index, row)">删除</el-button>
+							</template>
+						</el-table-column>
+						<el-table-column label="章节" width="70" align="center">
+							<template #default="{ row }">
+								{{ row.chapter ?? '-' }}
 							</template>
 						</el-table-column>
 					</el-table>
