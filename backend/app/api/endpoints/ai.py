@@ -1,7 +1,7 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlmodel import Session
 from app.db.session import get_session
-from app.schemas.ai import ContinuationRequest, ContinuationResponse, GeneralAIRequest
+from app.schemas.ai import ContinuationRequest, ContinuationResponse, GeneralAIRequest, LineByLineMode
 from app.schemas.response import ApiResponse
 from app.services import prompt_service, llm_config_service
 
@@ -428,4 +428,47 @@ async def generate_with_instruction_stream(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no"
         }
-    ) 
+    )
+
+
+@router.post("/generate/line-by-line", summary="逐行润色/审核接口")
+async def generate_line_by_line(
+    request: LineByLineMode,
+    session: Session = Depends(get_session),
+):
+    """
+    逐行润色/审核接口
+
+    支持流式响应，每行处理完成后立即返回。
+    """
+    from app.services.ai.core.llm_service import generate_line_by_line_streaming
+
+    try:
+        # 1. 获取提示词模板
+        prompt = prompt_service.get_prompt_by_name(session, request.prompt_name)
+        if not prompt or not prompt.template:
+            raise HTTPException(status_code=400, detail=f"未找到提示词: {request.prompt_name}")
+
+        # 2. 注入知识库
+        system_prompt = prompt_service.inject_knowledge(session, str(prompt.template))
+
+        # 3. 打印请求日志
+        logger.info(f"[逐行处理] prompt_name={request.prompt_name}, mode={request.mode}, text长度={len(request.text)}")
+        logger.info(f"[逐行处理] ========== System Prompt ==========")
+        logger.info(f"{system_prompt}")
+
+        # 4. 流式响应（generate_line_by_line_streaming 已产生 SSE 格式输出，无需二次包装）
+        return StreamingResponse(
+            generate_line_by_line_streaming(session, request, system_prompt),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}") 

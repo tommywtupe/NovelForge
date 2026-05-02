@@ -147,7 +147,7 @@ def _card_to_review_result(card: Card) -> ReviewResultCardRead:
         card_id=card.id,
         project_id=card.project_id,
         title=card.title,
-        review_target_card_id=int(content.get("review_target_card_id")),
+        review_target_card_id=int(content.get("review_target_card_id") or 0),
         review_target_title=str(content.get("review_target_title") or ""),
         review_target_type=str(content.get("review_target_type") or "card"),  # type: ignore[arg-type]
         review_type=str(content.get("review_type") or "card"),  # type: ignore[arg-type]

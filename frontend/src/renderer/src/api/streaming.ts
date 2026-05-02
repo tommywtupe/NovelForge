@@ -30,6 +30,9 @@ export function createSSEStreamingRequest(params: SSERequestParams) {
   const controller = new AbortController()
   const signal = controller.signal
 
+  // 100分钟 timeout
+  const timeoutId = setTimeout(() => controller.abort(), 6000000)
+
   fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -39,6 +42,7 @@ export function createSSEStreamingRequest(params: SSERequestParams) {
     body: JSON.stringify(body),
     signal,
   }).then(async response => {
+    clearTimeout(timeoutId)
     if (!response.ok) {
       const message = await extractErrorMessage(response, `请求失败：${response.status}`)
       throw new Error(message)

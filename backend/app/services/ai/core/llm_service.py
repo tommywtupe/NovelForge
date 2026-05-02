@@ -172,6 +172,244 @@ async def generate_review(
         raise
 
 
+async def generate_line_by_line_streaming(
+    session: Session,
+    request,  # LineByLineMode request object
+    system_prompt: str,
+    track_stats: bool = True,
+    max_retries: int = 2,
+) -> AsyncGenerator[str, None]:
+    """逐行润色/审核流式生成
+
+    Args:
+        session: 数据库会话
+        request: 逐行请求对象（包含text, mode等）
+        system_prompt: 系统提示词（由外部传入，已注入知识库）
+        track_stats: 是否记录统计
+        max_retries: 单行 LLM 调用最大重试次数
+
+    Yields:
+        处理后的文本片段（每行处理完成后yield）
+    """
+    from app.schemas.ai import LineByLineMode
+
+    # 解析请求参数
+    text = request.text
+    mode = request.mode
+    llm_config_id = request.llm_config_id
+    temperature = request.temperature or 0.7
+    max_tokens = request.max_tokens or 16384
+    timeout = request.timeout or 150
+    context_info = request.context_info
+
+    # 按行分割
+    lines = text.split('\n')
+
+    # 批次大小（从配置读取，默认8）
+    from app.core.config import settings
+    batch_size = settings.ai.line_by_line_batch_size
+    # 行间分隔符（必须唯一，不出现在内容中）
+    SEPARATOR = "\n---LINE_SEPARATOR---\n"
+
+    # 润色模式：记录已润色的前文，用于注入后续批次的 prompt 上下文
+    polished_lines: list[str] = []
+
+    total_lines = len(lines)
+
+    # 按批次处理
+    for batch_start in range(0, total_lines, batch_size):
+        batch_end = min(batch_start + batch_size, total_lines)
+
+        # 收集本批次结果：{line_index: (content, review_comment)}
+        batch_results: dict[int, tuple[str, str]] = {}
+        # 收集本批次非空行（需要 LLM 处理）
+        non_empty_entries: list[tuple[int, str]] = []
+
+        for idx in range(batch_start, batch_end):
+            line = lines[idx]
+            if not line.strip():
+                # 空行直接记录，不消耗 LLM 调用
+                batch_results[idx] = (line, "")
+            else:
+                non_empty_entries.append((idx, line))
+
+        # 如果有非空行需要处理，调用 LLM（整个批次一次）
+        if non_empty_entries:
+            # 构建多行批次的用户提示词
+            user_prompt_parts = []
+
+            # 添加上下文
+            if context_info:
+                user_prompt_parts.append(f"【引用上下文】\n{context_info}")
+
+            # 添加本批次所有待处理行（带行号标注）
+            batch_lines_text = "\n".join(
+                f"[{orig_idx + 1}] {line}" for orig_idx, line in non_empty_entries
+            )
+            batch_first = non_empty_entries[0][0] + 1
+            batch_last = non_empty_entries[-1][0] + 1
+            user_prompt_parts.append(f"【待处理行 {batch_first}-{batch_last}/{total_lines}】\n{batch_lines_text}")
+
+            if mode == "polish":
+                # 注入已润色的前文（之前所有批次的结果）
+                if polished_lines:
+                    polished_context = "\n".join(
+                        f"{pi + 1} | {pl}" for pi, pl in enumerate(polished_lines)
+                    )
+                    user_prompt_parts.append(f"【已润色前文】\n{polished_context}")
+                user_prompt_parts.append(
+                    f"\n【指令】请按顺序润色以上{len(non_empty_entries)}行内容，并对每一行进行审核。"
+                    f"每行输出格式：先输出润色后文本，换行后输出 <<<REVIEW>>>审核结果。"
+                    f"审核结果说明：如该行无问题输出 'pass'，如存在问题输出 'revise: 修改建议 | 原文'。"
+                    f"各行之间用 ---LINE_SEPARATOR--- 分隔。"
+                    f"只输出上述格式内容，不要编号、不要额外解释。\n"
+                    f"示例输出：\n"
+                    f"润色后的第一行\n<<<REVIEW>>>pass\n"
+                    f"---LINE_SEPARATOR---\n"
+                    f"润色后的第二行\n<<<REVIEW>>>revise: 逻辑冲突，角色已死亡 | 修正后的第二行"
+                )
+            else:
+                user_prompt_parts.append(
+                    f"\n【指令】请按顺序审核以上{len(non_empty_entries)}行内容。"
+                    f"每行审核结果之间用 ---LINE_SEPARATOR--- 分隔。"
+                    f"只输出审核结果（'pass' 或 'revise: 修改建议 | 内容'），不要编号、不要解释。"
+                )
+
+            batch_prompt = "\n".join(user_prompt_parts)
+
+            # 配额预检
+            if track_stats:
+                ok, reason = precheck_quota(
+                    session, llm_config_id,
+                    calc_input_tokens(system_prompt, batch_prompt),
+                    need_calls=1
+                )
+                if not ok:
+                    raise ValueError(f"LLM配额不足: {reason}")
+
+            # 构建模型和消息
+            model = build_chat_model(
+                session=session,
+                llm_config_id=llm_config_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=batch_prompt)
+            ]
+
+            # 调试日志
+            logger.info(f"[逐行处理] 批次 行{batch_first}-{batch_last}/{total_lines} ========== User Prompt ==========")
+            logger.info(f"{batch_prompt}")
+            logger.info(f"[逐行处理] 批次 行{batch_first}-{batch_last}/{total_lines} ========== End User Prompt ==========")
+
+            # 调用LLM（含重试）
+            raw_response = ""
+            last_error = None
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await model.ainvoke(messages)
+                    content = getattr(response, "content", response)
+
+                    logger.info(f"[逐行处理] 批次 行{batch_first}-{batch_last}/{total_lines} ========== Response Body ==========")
+                    logger.info(f"{content}")
+                    logger.info(f"[逐行处理] 批次 行{batch_first}-{batch_last}/{total_lines} ========== End Response Body ==========")
+
+                    if isinstance(content, list):
+                        raw_response = "".join(
+                            part.get("text", "") if isinstance(part, dict) else str(part)
+                            for part in content
+                        )
+                    else:
+                        raw_response = "" if content is None else str(content)
+
+                    raw_response = raw_response.strip()
+                    break  # 成功，退出重试循环
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"[逐行处理] 批次 行{batch_first}-{batch_last} LLM 调用失败 "
+                            f"(attempt {attempt + 1}/{max_retries + 1}): {e}"
+                        )
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                    else:
+                        logger.error(
+                            f"[逐行处理] 批次 行{batch_first}-{batch_last} LLM 调用全部失败: {e}"
+                        )
+                        raise
+            else:
+                # 所有重试均失败
+                raise last_error  # type: ignore[misc]
+
+            # 按分隔符拆分批次响应为各行的处理结果
+            processed_segments = [seg.strip() for seg in raw_response.split(SEPARATOR)]
+
+            # 检查分段数是否匹配
+            expected_count = len(non_empty_entries)
+            if len(processed_segments) != expected_count:
+                logger.warning(
+                    f"[逐行处理] 批次 行{batch_first}-{batch_last} 解析异常: "
+                    f"预期{expected_count}段，实际{len(processed_segments)}段，回退使用原文"
+                )
+                # 回退：使用原文
+                for orig_idx, original_line in non_empty_entries:
+                    batch_results[orig_idx] = (original_line, "")
+            else:
+                # 逐行解析处理结果
+                processed_total_out_tokens = 0
+                for (orig_idx, original_line), processed_segment in zip(non_empty_entries, processed_segments):
+                    processed_line = processed_segment
+                    review_comment = ""
+
+                    # 审核模式：提取审核建议
+                    if mode == "review":
+                        if processed_line.lower() == "pass":
+                            processed_line = original_line
+                        elif processed_line.startswith("revise:"):
+                            parts = processed_line.split("|", 1)
+                            if len(parts) >= 2:
+                                review_comment = parts[0].replace("revise:", "").strip()
+                                processed_line = parts[1].strip()
+
+                    # 润色模式：从响应中提取润色文本和审核子结果
+                    if mode == "polish":
+                        if "<<<REVIEW>>>" in processed_segment:
+                            seg_parts = processed_segment.split("<<<REVIEW>>>", 1)
+                            processed_line = seg_parts[0].strip()
+                            review_raw = seg_parts[1].strip()
+                            if review_raw.startswith("revise:"):
+                                r_parts = review_raw.split("|", 1)
+                                if len(r_parts) >= 2:
+                                    review_comment = r_parts[0].replace("revise:", "").strip()
+                            # "pass" or anything else -> review_comment stays ""
+                        else:
+                            processed_line = processed_segment
+
+                        # 将处理后的行加入前文上下文
+                        polished_lines.append(processed_line)
+
+                    batch_results[orig_idx] = (processed_line, review_comment)
+                    processed_total_out_tokens += estimate_tokens(processed_line)
+
+                # 记录用量（整个批次一次）
+                if track_stats:
+                    in_tokens = calc_input_tokens(system_prompt, batch_prompt)
+                    record_usage(
+                        session, llm_config_id,
+                        in_tokens, processed_total_out_tokens,
+                        calls=1, aborted=False
+                    )
+
+        # 按索引顺序 yield 本批次所有行的结果
+        for idx in range(batch_start, batch_end):
+            content, review_comment = batch_results[idx]
+            yield f"data: {json.dumps({'index': idx, 'content': content, 'original': lines[idx], 'review_comment': review_comment}, ensure_ascii=False)}\n\n"
+
+
 async def _generate_structured_native(
     *,
     session: Session,

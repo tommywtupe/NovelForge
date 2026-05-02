@@ -181,3 +181,42 @@ export function generateAssistantChatStreaming(
 ) {
   return createStreamingRequest(`${API_BASE_URL}/ai/assistant/chat`, params, onData, onClose, onError)
 }
+
+// 逐行润色/审核
+export interface LineByLineRequest {
+  text: string
+  mode: 'polish' | 'review'
+  llm_config_id: number
+  context_info?: string
+  prompt_name: string
+  temperature?: number
+  max_tokens?: number
+  timeout?: number
+  stream?: boolean
+}
+
+export interface LineByLineResult {
+  index: number
+  content: string
+  original: string
+  review_comment?: string  // 逐行审核结果
+}
+
+export function generateLineByLineStreaming(
+  params: LineByLineRequest,
+  onLine: (result: LineByLineResult) => void,
+  onClose: () => void,
+  onError?: (err: any) => void
+) {
+  return createSSEStreamingRequest({
+    endpoint: `${API_BASE_URL}/ai/generate/line-by-line`,
+    body: params,
+    onClose,
+    onError,
+    onMessage: payload => {
+      if (payload && typeof payload === 'object' && 'index' in payload) {
+        onLine(payload as LineByLineResult)
+      }
+    },
+  })
+}

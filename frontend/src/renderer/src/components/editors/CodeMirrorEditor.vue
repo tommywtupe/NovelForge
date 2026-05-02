@@ -94,6 +94,47 @@
 					</template>
 					</el-dropdown>
 
+					<!-- 逐行处理按钮 -->
+					<el-dropdown
+						v-if="!lineByLineLoading"
+						split-button
+						size="small"
+						popper-class="line-by-line-dropdown"
+						:disabled="aiLoading || reviewLoading"
+						@click="executeLineByLine"
+						@command="handleLineByLineModeChange"
+					>
+						<span class="line-by-line-button-label">
+							<el-icon><MagicStick /></el-icon>
+							逐行处理{{ lineByLineMode === 'polish' ? '·润色' : '·审核' }}
+						</span>
+						<template #dropdown>
+							<el-dropdown-menu>
+								<el-dropdown-item command="polish">
+									<div class="prompt-item">
+										<span>逐行润色</span>
+										<el-icon v-if="lineByLineMode === 'polish'" class="check-icon"><Select /></el-icon>
+									</div>
+								</el-dropdown-item>
+								<el-dropdown-item command="review">
+									<div class="prompt-item">
+										<span>逐行审核</span>
+										<el-icon v-if="lineByLineMode === 'review'" class="check-icon"><Select /></el-icon>
+									</div>
+								</el-dropdown-item>
+							</el-dropdown-menu>
+						</template>
+					</el-dropdown>
+					<el-button
+						v-if="lineByLineLoading"
+						size="small"
+						type="danger"
+						:disabled="false"
+						@click="cancelLineByLine"
+					>
+						取消逐行处理
+					</el-button>
+
 					<el-popover trigger="click" width="320" popper-class="chapter-ai-prompt-popper">
 						<template #reference>
 							<el-button plain size="small">提示词</el-button>
@@ -1170,7 +1211,7 @@ import { useEditorStore, type ChapterExtractRunOptions } from '@renderer/stores/
 import { useAppStore } from '@renderer/stores/useAppStore'
 import { useAssistantStore } from '@renderer/stores/useAssistantStore'
 import { updateCardRaw, type CardRead, type CardUpdate } from '@renderer/api/cards'
-import { generateContinuationStreaming, type ContinuationRequest, getAIConfigOptions, type AIConfigOptions } from '@renderer/api/ai'
+import { generateContinuationStreaming, generateLineByLineStreaming, type ContinuationRequest, type LineByLineRequest, type LineByLineResult, getAIConfigOptions, type AIConfigOptions } from '@renderer/api/ai'
 import { runReview, upsertReviewCard, type QualityGate, type ReviewDraftResult, type ReviewRunRequest } from '@renderer/api/chapterReviews'
 import { getCardAIParams, updateCardAIParams, applyCardAIParamsToType } from '@renderer/api/setting'
 import {
@@ -1191,7 +1232,7 @@ import { resolveTemplate } from '@renderer/services/contextResolver'
 import { getCardContextTemplates, getContextTemplateByKind, normalizeContextTemplateKind, type ContextTemplateKind, type ContextTemplates } from '@renderer/services/contextSlots'
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
-import { EditorView, keymap, Decoration, DecorationSet, lineNumbers } from '@codemirror/view'
+import { EditorView, keymap, Decoration, DecorationSet, lineNumbers, hoverTooltip, WidgetType } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, insertNewline } from '@codemirror/commands'
 
 const props = defineProps<{
@@ -1269,6 +1310,177 @@ const highlightField = StateField.define<DecorationSet>({
 	provide: f => EditorView.decorations.from(f)
 })
 
+// ===== 逐行润色逐字词 diff 装饰 =====
+
+/** 计算两段文字的首尾公共部分，返回删除和新增区间 */
+function computeCharDiff(original: string, polished: string): {
+  delFrom?: number    // 原文删除区间起点（在原文内）
+  delTo?: number      // 原文删除区间终点
+  insFrom?: number    // 润色文新增区间起点（在润色文内）
+  insTo?: number      // 润色文新增区间终点
+} {
+  if (original === polished) return {}
+
+  // 公共前缀
+  let prefixLen = 0
+  while (prefixLen < original.length && prefixLen < polished.length &&
+    original[prefixLen] === polished[prefixLen]) {
+    prefixLen++
+  }
+
+  // 公共后缀
+  let suffixLen = 0
+  while (suffixLen < original.length - prefixLen && suffixLen < polished.length - prefixLen &&
+    original[original.length - 1 - suffixLen] === polished[polished.length - 1 - suffixLen]) {
+    suffixLen++
+  }
+
+  const result: ReturnType<typeof computeCharDiff> = {}
+  const delStart = prefixLen
+  const delEnd = original.length - suffixLen
+  if (delStart < delEnd) { result.delFrom = delStart; result.delTo = delEnd }
+
+  const insStart = prefixLen
+  const insEnd = polished.length - suffixLen
+  if (insStart < insEnd) { result.insFrom = insStart; result.insTo = insEnd }
+
+  return result
+}
+
+/** 红色删除原文 widget */
+class RemovedTextWidget extends WidgetType {
+  constructor(readonly text: string) { super() }
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = 'cm-diff-removed'
+    span.textContent = this.text
+    return span
+  }
+  eq(other: RemovedTextWidget): boolean { return this.text === other.text }
+}
+
+const setLineDiffEffect = StateEffect.define<Map<number, LineReview> | null>()
+
+const lineDiffField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none
+  },
+  update(decorations, tr) {
+    decorations = decorations.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(setLineDiffEffect)) {
+        if (!effect.value || effect.value.size === 0) {
+          decorations = Decoration.none
+        } else {
+          const decoList: any[] = []
+          effect.value.forEach((review, idx) => {
+            const polished = review.polished
+            const original = review.original
+            if (original === polished || !polished) return
+
+            try {
+              const line = tr.state.doc.line(idx + 1)
+              const lineFrom = line.from
+
+              // 行级别：绿色左边框
+              decoList.push(Decoration.line({ class: 'cm-line-polished' }).range(lineFrom))
+
+              // 字词级别 diff
+              const diff = computeCharDiff(original, polished)
+              if (diff.delFrom != null && diff.delTo != null) {
+                // 红色删除原文 widget（放在新增区前的位置）
+                const deletedText = original.slice(diff.delFrom, diff.delTo)
+                if (deletedText) {
+                  const widgetPos = lineFrom + (diff.insFrom != null ? diff.insFrom : diff.delFrom)
+                  try {
+                    decoList.push(Decoration.widget({
+                      widget: new RemovedTextWidget(deletedText),
+                      side: -1,
+                    }).range(widgetPos))
+                  } catch { /* widget position invalid */ }
+                }
+              }
+              if (diff.insFrom != null && diff.insTo != null && diff.insFrom < diff.insTo) {
+                // 绿色新增文字：inline mark
+                decoList.push(
+                  Decoration.mark({ class: 'cm-diff-added' }).range(
+                    lineFrom + diff.insFrom,
+                    lineFrom + diff.insTo
+                  )
+                )
+              }
+            } catch { /* line may not exist */ }
+          })
+          decorations = Decoration.set(decoList, true)
+        }
+      }
+    }
+    return decorations
+  },
+  provide: f => EditorView.decorations.from(f)
+})
+
+// ===== 逐行润色悬停浮窗 =====
+const lineReviewHover = hoverTooltip((v, pos) => {
+  const line = v.state.doc.lineAt(pos)
+  const lineIdx = line.number - 1
+  const lineText = line.text
+  const review = lineReviews.value.get(lineIdx)
+
+  const dom = document.createElement('div')
+  dom.className = 'cm-line-review-tooltip'
+
+  if (!review) {
+    dom.innerHTML = `<div class="tooltip-status unreviewed">未审核</div>`
+    dom.innerHTML += `<div class="tooltip-line-text">${escapeTooltipHtml(lineText)}</div>`
+  } else if (review.status === 'pass') {
+    dom.innerHTML = `<div class="tooltip-status pass">审核通过</div>`
+    dom.innerHTML += `<div class="tooltip-line-text">${escapeTooltipHtml(lineText)}</div>`
+  } else {
+    dom.innerHTML = `<div class="tooltip-status revise">审核建议</div>`
+    if (review.review_comment) {
+      dom.innerHTML += `<div class="tooltip-review-comment">${escapeTooltipHtml(review.review_comment)}</div>`
+    }
+    if (review.original !== review.polished) {
+      const diff = computeCharDiff(review.original, review.polished)
+      let diffHtml = ''
+      // 不变的公共前缀
+      if (diff.delFrom != null && diff.delFrom > 0) {
+        diffHtml += `<span class="unchanged">${escapeTooltipHtml(review.original.slice(0, diff.delFrom))}</span>`
+      }
+      // 红色删除原文
+      if (diff.delFrom != null && diff.delTo != null) {
+        diffHtml += `<span class="text strikethrough">${escapeTooltipHtml(review.original.slice(diff.delFrom, diff.delTo))}</span>`
+      }
+      // 公共后缀
+      if (diff.delTo != null && diff.delTo < review.original.length) {
+        diffHtml += `<span class="unchanged">${escapeTooltipHtml(review.original.slice(diff.delTo))}</span>`
+      }
+
+      let polishedDiffHtml = ''
+      if (diff.insFrom != null && diff.insFrom > 0) {
+        polishedDiffHtml += `<span class="unchanged">${escapeTooltipHtml(review.polished.slice(0, diff.insFrom))}</span>`
+      }
+      if (diff.insFrom != null && diff.insTo != null) {
+        polishedDiffHtml += `<span class="text">${escapeTooltipHtml(review.polished.slice(diff.insFrom, diff.insTo))}</span>`
+      }
+      if (diff.insTo != null && diff.insTo < review.polished.length) {
+        polishedDiffHtml += `<span class="unchanged">${escapeTooltipHtml(review.polished.slice(diff.insTo))}</span>`
+      }
+
+      dom.innerHTML += `<div class="tooltip-diff-section">`
+      dom.innerHTML += `<div class="tooltip-original-text"><span class="label">原文：</span>${diffHtml || escapeTooltipHtml(review.original)}</div>`
+      dom.innerHTML += `<div class="tooltip-polished-text"><span class="label">润色：</span>${polishedDiffHtml || escapeTooltipHtml(review.polished)}</div>`
+      dom.innerHTML += `</div>`
+    }
+  }
+
+  return {
+    pos: Math.min(pos, v.state.doc.length),
+    create: () => ({ dom }),
+  }
+})
+
 const localCard = reactive({
 	...props.card,
 	content: {
@@ -1283,6 +1495,42 @@ const localCard = reactive({
 		...(props.card.content as any || {})
 	}
 })
+
+// ===== 逐行润色/审核状态 =====
+const lineByLineLoading = ref(false)
+const lineByLineMode = ref<'polish' | 'review'>('polish')
+const lineByLineAbortController = ref<{ cancel: () => void } | null>(null)
+const lineByLineOriginalSnapshot = ref<string | null>(null)
+
+interface LineReview {
+  index: number
+  original: string
+  polished: string
+  review_comment: string
+  status: 'pass' | 'revise' | 'unreviewed'
+}
+const lineReviews = ref<Map<number, LineReview>>(new Map())
+
+// 加载已有的逐行审核数据
+const storedLineReviews = (props.card.content as any)?.line_reviews
+if (Array.isArray(storedLineReviews)) {
+  storedLineReviews.forEach((r: LineReview) => {
+    lineReviews.value.set(r.index, r)
+  })
+}
+
+function serializeLineReviews(): LineReview[] {
+  return Array.from(lineReviews.value.values())
+}
+
+function escapeTooltipHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
 
 const generationContextKindValue = computed(() => normalizeContextTemplateKind(props.generationContextKind, 'generation'))
 const reviewContextKindValue = computed(() => normalizeContextTemplateKind(props.reviewContextKind, 'review'))
@@ -1956,6 +2204,161 @@ function buildChapterReviewTarget(
 	return lines.join('\n').trim()
 }
 
+// ===== 逐行润色/审核功能 =====
+function handleLineByLineModeChange(mode: 'polish' | 'review') {
+  lineByLineMode.value = mode
+}
+
+async function executeLineByLine() {
+  if (!ensureNoPendingAiEdit()) return
+  const text = getText()
+  if (!text || !text.trim()) {
+    ElMessage.warning('请先输入章节正文内容')
+    return
+  }
+
+  const llmConfigId = resolveLlmConfigId()
+  if (!llmConfigId) {
+    ElMessage.error('请先设置有效的模型ID')
+    return
+  }
+
+  lineByLineLoading.value = true
+  lineByLineOriginalSnapshot.value = text
+
+  // 构建上下文
+  let resolvedContext = ''
+  try {
+    resolvedContext = getResolvedContext(generationContextKindValue.value, 'generation')
+  } catch {}
+
+  try {
+    const { generateLineByLineStreaming } = await import('@renderer/api/ai')
+    const originalLines = text.split('\n')
+    const processedLinesMap = new Map<number, string>()
+
+    const stream = generateLineByLineStreaming(
+      {
+        text,
+        mode: lineByLineMode.value,
+        llm_config_id: llmConfigId,
+        context_info: resolvedContext || undefined,
+        prompt_name: lineByLineMode.value === 'polish' ? '逐行润色' : '逐行审核',
+        temperature: resolveSampling().temperature,
+        max_tokens: resolveSampling().max_tokens,
+        timeout: resolveSampling().timeout,
+      },
+      (result: LineByLineResult) => {
+        const idx = result.index
+        processedLinesMap.set(idx, result.content)
+
+        // 存储每行的审核数据
+        const reviewData: LineReview = {
+          index: idx,
+          original: result.original,
+          polished: result.content,
+          review_comment: result.review_comment || '',
+          status: result.review_comment ? 'revise' : 'pass',
+        }
+        lineReviews.value.set(idx, reviewData)
+
+        // 润色模式：实时更新编辑器文字
+        if (lineByLineMode.value === 'polish') {
+          const combinedParts = originalLines.map((l, i) => processedLinesMap.get(i) ?? l)
+          const combinedText = combinedParts.join('\n')
+          updateEditorTextSilent(combinedText)
+        }
+
+        // 刷新行装饰
+        dispatchLineDiff()
+      },
+      () => {
+        // onClose - 关闭流回调。如果已经被手动取消（snapshot 已被 cancelLineByLine 清空），
+        // 则跳过后续逻辑，避免重复写回部分润色结果覆盖已恢复的原文。
+        if (!lineByLineOriginalSnapshot.value) {
+          lineByLineLoading.value = false
+          lineByLineAbortController.value = null
+          return
+        }
+
+        lineByLineLoading.value = false
+        lineByLineAbortController.value = null
+
+        if (lineByLineMode.value === 'polish') {
+          // 确保最终文本已经替换为润色后内容
+          const finalParts = originalLines.map((l, i) => processedLinesMap.get(i) ?? l)
+          const finalText = finalParts.join('\n')
+          updateEditorTextSilent(finalText)
+
+          const changedCount = Array.from(lineReviews.value.values())
+            .filter(r => r.original !== r.polished).length
+          ElMessage.success(`逐行润色已完成，${changedCount} 行已修改（请保存生效）`)
+        } else {
+          const reviewedCount = lineReviews.value.size
+          ElMessage.success(`逐行审核已完成，${reviewedCount} 行已审核（请保存生效）`)
+        }
+
+        // 逐行处理后，原文已被修改（润色）或新增了审核数据（审核），
+        // 需要手动标记 dirty 以启用父级保存按钮。
+        // updateEditorTextSilent 会重置 originalContent，导致 native dirty 检测永远为 false。
+        nextTick(() => {
+          isDirty.value = true
+          emit('update:dirty', true)
+        })
+
+        lineByLineOriginalSnapshot.value = null
+        dispatchLineDiff()
+      },
+      (error) => {
+        console.error('逐行处理失败:', error)
+        ElMessage.error('逐行处理失败，请重试')
+        lineByLineLoading.value = false
+        lineByLineAbortController.value = null
+        lineByLineOriginalSnapshot.value = null
+      }
+    )
+
+    lineByLineAbortController.value = stream
+  } catch (e) {
+    console.error('逐行处理失败:', e)
+    ElMessage.error('逐行处理失败')
+    lineByLineLoading.value = false
+    lineByLineOriginalSnapshot.value = null
+  }
+}
+
+function cancelLineByLine() {
+  // 标记快照为空，防止 onClose 回调覆盖当前文本
+  lineByLineOriginalSnapshot.value = null
+  try { lineByLineAbortController.value?.cancel() } catch {}
+  lineByLineAbortController.value = null
+
+  lineByLineLoading.value = false
+  ElMessage.info('已取消逐行处理')
+
+  // 保留当前文本和 diff 装饰，等待用户手动保存或继续编辑
+  nextTick(() => dispatchLineDiff())
+}
+
+// 静默更新编辑器文本（不触发 dirty 状态变化）
+function updateEditorTextSilent(text: string) {
+  if (!view) return
+  isDirtySuppressTimer = true
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text || '' }
+  })
+}
+
+let isDirtySuppressTimer = false
+
+// 发送行装饰效果
+function dispatchLineDiff() {
+  if (!view) return
+  view.dispatch({
+    effects: setLineDiffEffect.of(lineReviews.value)
+  })
+}
+
 async function handleAiQuickAction(command: 'polish' | 'expand') {
 	if (command === 'polish') {
 		await executePolish()
@@ -2101,6 +2504,8 @@ function initEditor() {
 				lineNumbers(),
 				EditorView.lineWrapping,
 				highlightField,
+				lineDiffField,
+				lineReviewHover,
 				// 关键：限制编辑器高度由父容器决定，而不是根据内容自动扩展
 				EditorView.theme({
 					"&": { height: "100%" },
@@ -2132,11 +2537,18 @@ function initEditor() {
 					const txt = update.state.doc.toString()
 					wordCount.value = computeWordCount(txt)
 
-					// 检测dirty状态
-					const newDirty = txt !== originalContent.value
-					if (newDirty !== isDirty.value) {
-						isDirty.value = newDirty
-						emit('update:dirty', newDirty)
+					// 逐行处理静默更新时不触发 dirty
+					if (isDirtySuppressTimer) {
+						isDirtySuppressTimer = false
+						// 更新原始内容引用，避免后续正常编辑误判
+						originalContent.value = txt
+					} else {
+						// 检测dirty状态
+						const newDirty = txt !== originalContent.value
+						if (newDirty !== isDirty.value) {
+							isDirty.value = newDirty
+							emit('update:dirty', newDirty)
+						}
 					}
 
 					localCard.content = {
@@ -2146,6 +2558,7 @@ function initEditor() {
 						volume_number: (props.contextParams as any)?.volume_number ?? (localCard.content as any)?.volume_number,
 						chapter_number: (props.contextParams as any)?.chapter_number ?? (localCard.content as any)?.chapter_number,
 						title: (localCard.content as any)?.title ?? localCard.title,
+						line_reviews: serializeLineReviews(),
 					}
 					if (props.chapter) {
 						emit('update:chapter', {
@@ -2163,6 +2576,11 @@ function initEditor() {
 	// 初始化字数
 	wordCount.value = computeWordCount(getText())
 	ready.value = true
+
+	// 应用已加载的逐行审核装饰
+	if (lineReviews.value.size > 0) {
+		nextTick(() => dispatchLineDiff())
+	}
 
 	// 添加右键菜单监听器到 CodeMirror 的 DOM 元素
 	if (view && cmRoot.value) {
@@ -2275,6 +2693,11 @@ async function handleSave(newTitle?: string) {
 		chapter_number: (props.contextParams as any)?.chapter_number ?? (localCard.content as any)?.chapter_number,
 		// 始终把最新标题写入 content.title，供上下文模板和筛选使用
 		title: effectiveTitle || (localCard.content as any)?.title || localCard.title,
+		// 逐行审核数据。润色保存后视作已接受，original 对齐 polished 避免重载后重现 diff。
+		// 审核评论保留供 tooltip 显示。
+		line_reviews: lineReviews.value.size > 0
+			? serializeLineReviews().map(r => ({ ...r, original: r.polished }))
+			: undefined,
 	}
 	const updatePayload: CardUpdate = {
 		title: effectiveTitle,
@@ -2288,6 +2711,13 @@ async function handleSave(newTitle?: string) {
 	originalContent.value = getText()
 	isDirty.value = false
 	emit('update:dirty', false)
+
+	// 保存后: 润色内容视作已接受，normalize original=polished 消除 diff 装饰；
+	// 审核评论（review_comment / status）保留供 tooltip 显示。
+	for (const r of lineReviews.value.values()) {
+		r.original = r.polished
+	}
+	nextTick(() => dispatchLineDiff())
 
 	// 返回保存的内容供历史版本使用
 	return updatePayload.content
@@ -3974,6 +4404,16 @@ async function restoreContent(versionContent: any) {
 		// 更新字数
 		wordCount.value = computeWordCount(textContent)
 
+		// 恢复逐行审核数据
+		lineReviews.value.clear()
+		const storedReviews = (versionContent as any)?.line_reviews
+		if (Array.isArray(storedReviews)) {
+			storedReviews.forEach((r: LineReview) => {
+				lineReviews.value.set(r.index, r)
+			})
+		}
+		nextTick(() => dispatchLineDiff())
+
 	} catch (e) {
 		console.error('Failed to restore content:', e)
 		throw e
@@ -4747,5 +5187,176 @@ defineExpose({
 	box-shadow:
 		0 0 0 1px rgba(255, 255, 255, 0.45),
 		0 0 12px rgba(191, 219, 254, 0.58);
+}
+
+/* ===== 逐行润色行装饰 ===== */
+.editor-content :deep(.cm-line-polished) {
+	border-left: 3px solid rgba(34, 197, 94, 0.5);
+	background: rgba(34, 197, 94, 0.04);
+}
+
+.dark .editor-content :deep(.cm-line-polished) {
+	border-left-color: rgba(34, 197, 94, 0.55);
+	background: rgba(34, 197, 94, 0.06);
+}
+
+/* 逐字词 diff：红色删除原文 widget */
+.editor-content :deep(.cm-diff-removed) {
+	color: #dc2626;
+	text-decoration: line-through;
+	background: rgba(220, 38, 38, 0.06);
+	border-radius: 2px;
+	padding: 0 2px;
+	margin: 0 1px;
+}
+
+.dark .editor-content :deep(.cm-diff-removed) {
+	color: #fca5a5;
+	background: rgba(220, 38, 38, 0.12);
+}
+
+/* 逐字词 diff：绿色新增 inline */
+.editor-content :deep(.cm-diff-added) {
+	color: #16a34a;
+	background: rgba(34, 197, 94, 0.12);
+	border-radius: 2px;
+	padding: 0 2px;
+	text-decoration: underline;
+	text-decoration-color: rgba(34, 197, 94, 0.35);
+	text-underline-offset: 2px;
+}
+
+.dark .editor-content :deep(.cm-diff-added) {
+	color: #86efac;
+	background: rgba(34, 197, 94, 0.15);
+	text-decoration-color: rgba(34, 197, 94, 0.45);
+}
+
+/* ===== 悬停浮窗 Tooltip ===== */
+:global(.cm-line-review-tooltip) {
+	max-width: 480px;
+	min-width: 240px;
+	padding: 10px 12px;
+	font-size: 13px;
+	line-height: 1.55;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #1e293b;
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.08);
+	word-break: break-word;
+}
+
+:global(.cm-line-review-tooltip .tooltip-status) {
+	font-weight: 600;
+	font-size: 12px;
+	margin-bottom: 6px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid #e2e8f0;
+}
+
+:global(.cm-line-review-tooltip .tooltip-status.unreviewed) {
+	color: #94a3b8;
+}
+
+:global(.cm-line-review-tooltip .tooltip-status.pass) {
+	color: #16a34a;
+}
+
+:global(.cm-line-review-tooltip .tooltip-status.revise) {
+	color: #d97706;
+}
+
+:global(.cm-line-review-tooltip .tooltip-line-text) {
+	color: #64748b;
+	font-size: 12px;
+	margin-top: 4px;
+	max-height: 80px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+:global(.cm-line-review-tooltip .tooltip-review-comment) {
+	color: #d97706;
+	margin-top: 4px;
+	font-size: 12px;
+	padding: 4px 6px;
+	background: rgba(245, 158, 11, 0.08);
+	border-radius: 4px;
+}
+
+:global(.cm-line-review-tooltip .tooltip-diff-section) {
+	margin-top: 6px;
+	padding-top: 6px;
+	border-top: 1px dashed #e2e8f0;
+}
+
+:global(.cm-line-review-tooltip .tooltip-original-text) {
+	margin-top: 2px;
+	font-size: 12px;
+}
+
+:global(.cm-line-review-tooltip .tooltip-polished-text) {
+	margin-top: 2px;
+	font-size: 12px;
+}
+
+:global(.cm-line-review-tooltip .tooltip-original-text .label) {
+	color: #dc2626;
+	font-weight: 500;
+	margin-right: 2px;
+}
+
+:global(.cm-line-review-tooltip .tooltip-polished-text .label) {
+	color: #16a34a;
+	font-weight: 500;
+	margin-right: 2px;
+}
+
+:global(.cm-line-review-tooltip .tooltip-original-text .text.strikethrough) {
+	color: #dc2626;
+	text-decoration: line-through;
+}
+
+:global(.cm-line-review-tooltip .tooltip-polished-text .text) {
+	color: #16a34a;
+}
+
+:global(.cm-line-review-tooltip .tooltip-original-text .unchanged) {
+	color: #64748b;
+}
+
+:global(.cm-line-review-tooltip .tooltip-polished-text .unchanged) {
+	color: #64748b;
+}
+
+/* 暗色模式 Tooltip */
+.dark :global(.cm-line-review-tooltip) {
+	background: #1e293b;
+	color: #e2e8f0;
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.dark :global(.cm-line-review-tooltip .tooltip-status) {
+	border-bottom-color: #334155;
+}
+
+.dark :global(.cm-line-review-tooltip .tooltip-line-text) {
+	color: #94a3b8;
+}
+
+.dark :global(.cm-line-review-tooltip .tooltip-review-comment) {
+	background: rgba(245, 158, 11, 0.12);
+}
+
+.dark :global(.cm-line-review-tooltip .tooltip-diff-section) {
+	border-top-color: #334155;
+}
+
+.dark :global(.cm-line-review-tooltip .tooltip-original-text .text.strikethrough) {
+	color: #fca5a5;
+}
+
+.dark :global(.cm-line-review-tooltip .tooltip-polished-text .text) {
+	color: #86efac;
 }
 </style>

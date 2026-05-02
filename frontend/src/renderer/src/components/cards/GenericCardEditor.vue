@@ -72,6 +72,36 @@
           </el-dropdown>
           <AIPerCardParams :card-id="props.card.id" :card-type-name="props.card.card_type?.name" />
           <el-button size="small" type="primary" plain @click="schemaStudioVisible = true">结构</el-button>
+          <el-button v-if="lineByLineLoading" size="small" type="danger" :loading="true" @click="cancelLineByLine">取消逐行处理</el-button>
+          <el-dropdown
+            v-else
+            split-button
+            size="small"
+            popper-class="line-by-line-dropdown"
+            @click="executeLineByLine"
+            @command="handleLineByLineModeChange"
+          >
+            <span class="line-by-line-button-label">
+              <el-icon><MagicStick /></el-icon>
+              逐行处理
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="polish">
+                  <div class="prompt-item">
+                    <span>逐行润色</span>
+                    <el-icon v-if="lineByLineMode === 'polish'" class="check-icon"><Select /></el-icon>
+                  </div>
+                </el-dropdown-item>
+                <el-dropdown-item command="review">
+                  <div class="prompt-item">
+                    <span>逐行审核</span>
+                    <el-icon v-if="lineByLineMode === 'review'" class="check-icon"><Select /></el-icon>
+                  </div>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
 
@@ -205,7 +235,7 @@ import type { CardRead, CardUpdate } from '@renderer/api/cards'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SimpleMarkdown from '../common/SimpleMarkdown.vue'
 import { addVersion } from '@renderer/services/versionService'
-import { List, Select, Loading } from '@element-plus/icons-vue'
+import { List, Select, Loading, MagicStick } from '@element-plus/icons-vue'
 import { useAppStore } from '@renderer/stores/useAppStore'
 import { useAIStore as useAIStoreForOptions } from '@renderer/stores/useAIStore'
 import SchemaStudio from '../shared/SchemaStudio.vue'
@@ -256,6 +286,10 @@ const showVersions = ref(false)
 const schemaStudioVisible = ref(false)
 const assistantVisible = ref(false)
 const reviewLoading = ref(false)
+const lineByLineLoading = ref(false)
+const lineByLineMode = ref<'polish' | 'review'>('polish')
+const lineByLineAbortController = ref<{ cancel: () => void } | null>(null)
+const lineByLineOriginalSnapshot = ref<{ text: string; targetField: string } | null>(null)
 const stageReviewDialogVisible = ref(false)
 const stageReviewText = ref('')
 const stageReviewDraft = ref<ReviewDraftResult | null>(null)
@@ -801,6 +835,7 @@ function keyHandler(e: KeyboardEvent) {
 onMounted(() => { window.addEventListener('keydown', keyHandler) })
 onBeforeUnmount(() => {
   try { stageReviewAbortController.value?.abort() } catch {}
+  try { lineByLineAbortController.value?.cancel() } catch {}
   window.removeEventListener('keydown', keyHandler)
 })
 
@@ -986,6 +1021,209 @@ async function executeReview() {
     }
     reviewLoading.value = false
   }
+}
+
+// ==================== 逐行润色/审核 ====================
+
+function handleLineByLineModeChange(mode: 'polish' | 'review') {
+  lineByLineMode.value = mode
+}
+
+async function executeLineByLine() {
+  const currentContent = getCurrentEditingContent()
+  const target = resolveReviewTarget(currentContent)
+
+  // 获取待处理文本
+  const textToProcess = target.targetText || stringifyReviewTarget(currentContent)
+  if (!textToProcess || !textToProcess.trim()) {
+    ElMessage.warning('请先补充可处理内容后再执行逐行处理')
+    return
+  }
+
+  const p = perCardStore.getByCardId(props.card.id) || editingParams.value
+  if (!p?.llm_config_id) {
+    ElMessage.error('请先设置有效的模型ID')
+    return
+  }
+
+  lineByLineLoading.value = true
+
+  try {
+    // 获取上下文
+    const resolvedContext = getResolvedContextByKind(generationContextKind.value, currentContent)
+
+    // 构建结果数组
+    interface ProcessedLine {
+      content: string
+      reviewComment: string
+    }
+    const processedLines: ProcessedLine[] = []
+    const originalLines = textToProcess.split('\n')
+
+    // 调用逐行处理 API
+    const { generateLineByLineStreaming } = await import('@renderer/api/ai')
+    const targetField = target.targetField
+    const canStreamUpdate = targetField === 'content.content' || targetField === 'content.overview'
+
+    // Snapshot original content for cancel restoration
+    lineByLineOriginalSnapshot.value = { text: textToProcess, targetField }
+
+    const stream = generateLineByLineStreaming(
+      {
+        text: textToProcess,
+        mode: lineByLineMode.value,
+        llm_config_id: p.llm_config_id,
+        context_info: resolvedContext || undefined,
+        prompt_name: lineByLineMode.value === 'polish' ? '逐行润色' : '逐行审核',
+        temperature: p.temperature,
+        max_tokens: p.max_tokens,
+        timeout: p.timeout,
+      },
+      (result) => {
+        processedLines[result.index] = {
+          content: result.content,
+          reviewComment: result.review_comment || ''
+        }
+
+        // 即时更新 localData，让表单字段实时显示进度
+        if (canStreamUpdate) {
+          const combinedParts = originalLines.map((l, i) => processedLines[i]?.content ?? l)
+          const combinedText = combinedParts.join('\n')
+          if (targetField === 'content.content') {
+            localData.value.content = combinedText
+          } else if (targetField === 'content.overview') {
+            localData.value.overview = combinedText
+          }
+        }
+      },
+      () => {
+        // onClose - 统一保存一次
+        if (processedLines.length > 0) {
+          const processedText = processedLines.map(l => l.content).join('\n')
+          applyLineByLineResult(processedText, originalLines.join('\n'), processedLines, targetField)
+        }
+        lineByLineLoading.value = false
+        lineByLineOriginalSnapshot.value = null
+      },
+      (error) => {
+        console.error('逐行处理失败:', error)
+        ElMessage.error('逐行处理失败')
+        lineByLineLoading.value = false
+        lineByLineOriginalSnapshot.value = null
+      }
+    )
+
+    // 存储 stream 以便取消
+    lineByLineAbortController.value = stream
+  } catch (e) {
+    console.error('逐行处理失败:', e)
+    ElMessage.error('逐行处理失败')
+    lineByLineLoading.value = false
+  }
+}
+
+function cancelLineByLine() {
+  // Cancel the ongoing stream
+  try { lineByLineAbortController.value?.cancel() } catch {}
+  lineByLineAbortController.value = null
+
+  // Restore original content
+  const snapshot = lineByLineOriginalSnapshot.value
+  if (snapshot) {
+    if (snapshot.targetField === 'content.content') {
+      localData.value.content = snapshot.text
+    } else if (snapshot.targetField === 'content.overview') {
+      localData.value.overview = snapshot.text
+    }
+    lineByLineOriginalSnapshot.value = null
+  }
+
+  lineByLineLoading.value = false
+  ElMessage.info('已取消逐行处理')
+}
+
+async function applyLineByLineResult(
+  processedText: string,
+  originalText: string,
+  processedLines: { content: string; reviewComment: string }[],
+  targetField: string
+) {
+  // 统计变更行数
+  const changedCount = processedLines.filter((l, i) => l.content !== originalText.split('\n')[i]).length
+  const originalLines = originalText.split('\n')
+
+  // 根据 targetField 直接写回卡片内容
+  const canWriteBack = targetField === 'content.content' || targetField === 'content.overview'
+
+  if (canWriteBack) {
+    // 可安全写回的纯文本字段
+    if (targetField === 'content.content') {
+      localData.value.content = processedText
+    } else if (targetField === 'content.overview') {
+      localData.value.overview = processedText
+    }
+
+    try {
+      await handleSave()
+      const mode = lineByLineMode.value === 'polish' ? '润色' : '审核'
+      ElMessage.success(`逐行${mode}已应用，${changedCount} 行已修改并保存`)
+    } catch (e) {
+      console.error('保存失败:', e)
+      ElMessage.warning('内容已更新但保存失败，请手动保存')
+    }
+  } else {
+    // 复杂结构化内容（如阶段大纲），展示 diff 对话框供审核
+    let diffHtml = '<div style="font-family: monospace; font-size: 13px; line-height: 1.6;">'
+    for (let i = 0; i < Math.max(processedLines.length, originalLines.length); i++) {
+      const origLine = originalLines[i] ?? ''
+      const procLine = processedLines[i]?.content ?? ''
+      const comment = processedLines[i]?.reviewComment || ''
+      const tooltipContent = comment ? `⚠️ 审核建议：${comment.replace(/"/g, '&quot;')}` : '暂无审核结果'
+      const tooltipClass = comment ? 'warn' : 'info'
+      if (origLine === procLine) {
+        diffHtml += `<div class="diff-line" style="color: #666;">${escapeHtml(origLine) || '&nbsp;'}<span class="tooltip-popup ${tooltipClass}">${escapeHtml(tooltipContent)}</span></div>`
+      } else {
+        if (origLine) {
+          diffHtml += `<div class="diff-line"><span style="color: #dc3545; background: #fff0f0; text-decoration: line-through;">${escapeHtml(origLine)}</span><span class="tooltip-popup ${tooltipClass}">${escapeHtml(tooltipContent)}</span></div>`
+        }
+        if (procLine) {
+          diffHtml += `<div class="diff-line"><span style="color: #28a745; background: #f0fff0;">+ ${escapeHtml(procLine)}</span><span class="tooltip-popup ${tooltipClass}">${escapeHtml(tooltipContent)}</span></div>`
+        }
+      }
+    }
+    diffHtml += '</div>'
+
+    const title = lineByLineMode.value === 'polish' ? '逐行润色结果' : '逐行审核结果'
+    ElMessageBox.confirm(
+      `<div style="max-height: 500px; overflow-y: auto;">
+        <div style="margin-bottom: 12px; color: #666; font-size: 12px;">
+          <span style="color: #dc3545;">■ 红色删除线</span> = 原文 |
+          <span style="color: #28a745;">■ 绿色</span> = 修改后 |
+          <span style="color: #ffc107;">⚠️ 悬停</span> = 审核建议
+        </div>
+        ${diffHtml}
+      </div>`,
+      title,
+      {
+        confirmButtonText: '复制结果',
+        cancelButtonText: '关闭',
+        dangerouslyUseHTMLString: true,
+      }
+    ).then(() => {
+      navigator.clipboard.writeText(processedText).then(() => {
+        ElMessage.success('结果已复制到剪贴板')
+      })
+    }).catch(() => {})
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 async function handleCreateOrUpdateReviewCard() {

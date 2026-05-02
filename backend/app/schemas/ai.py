@@ -97,3 +97,16 @@ class BuildTranslationContextResponse(BaseModel):
     """构建翻译上下文的响应"""
     context_info: str = Field(description="完整的上下文信息，包含翻译上下文和术语表")
     source_text: str = Field(description="提取的原文正文")
+
+
+class LineByLineMode(BaseModel):
+    """逐行润色/审核模式"""
+    text: str = Field(description="待处理原文")
+    mode: Literal["polish", "review"] = Field(description="处理模式：polish=润色, review=审核")
+    llm_config_id: int
+    context_info: Optional[str] = Field(default=None, description="上下文注入信息")
+    prompt_name: str = Field(default="逐行润色", description="提示词名称：逐行润色 或 逐行审核")
+    temperature: Optional[float] = Field(default=None, description="采样温度 0-2")
+    max_tokens: Optional[int] = Field(default=None, description="生成的最大token数")
+    timeout: Optional[float] = Field(default=None, description="生成超时(秒)")
+    stream: bool = Field(default=True, description="是否流式输出")

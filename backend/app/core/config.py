@@ -133,10 +133,12 @@ class BootstrapSettings(BaseSettings):
 
 class AISettings(BaseSettings):
     """AI相关配置"""
-    
+
     # 模型调用失败时最大重试次数
     max_tool_call_retries: int = Field(default=3, alias="MAX_TOOL_CALL_RETRIES")
-    
+    # 逐行处理每批次行数
+    line_by_line_batch_size: int = Field(default=8, alias="LINE_BY_LINE_BATCH_SIZE")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
