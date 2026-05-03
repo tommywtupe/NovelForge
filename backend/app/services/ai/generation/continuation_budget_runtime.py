@@ -27,6 +27,14 @@ class ContinuationRoundPlan:
 
 
 @dataclass(frozen=True)
+class BeatInfo:
+    beat_id: int
+    beat_action: str
+    beat_subtext_action: Optional[str] = None
+    turning_point: bool = False
+
+
+@dataclass(frozen=True)
 class ContinuationTrimResult:
     text: str
     trimmed: bool
@@ -138,12 +146,16 @@ def build_round_plan(
 def build_dialogue_hint_text(plan: ContinuationRoundPlan) -> str:
     """构建对白质量标准提示（仅在 balanced 模式下使用）
 
-    根据轮次调整对白提示的重点：
-    - 前2轮：强调冲突张力、角色声音个体化
-    - 中段：强调三功能、微限冲突
-    - 收尾轮：强调自反性冲突、非直接冲突（留白）
+    根据轮次百分比调整对白提示的重点：
+    - 前25%轮次：强调冲突张力、角色声音个体化
+    - 25%-50%轮次：强调三功能、微限冲突
+    - 50%-75%轮次：非直接冲突（收尾前铺垫）
+    - 75%-100%轮次：自反性冲突（收尾/情感高潮）
     """
     lines = ["【对白质量标准】"]
+
+    # 计算当前轮次在总轮次中的比例
+    round_ratio = plan.round_index / max(plan.max_rounds, 1)
 
     # 对白三功能（所有轮次都适用）
     lines.append("■ 每句重要对白至少满足一个功能：")
@@ -151,24 +163,24 @@ def build_dialogue_hint_text(plan: ContinuationRoundPlan) -> str:
     lines.append("  - 推进行动：话语改变现状，向高潮移动")
     lines.append("  - 建立主题：承载主题但不直接说出")
 
-    # 角色声音个体化（早期轮次重点）
-    if plan.round_index <= 2:
+    # 角色声音个体化（前25%轮次）
+    if round_ratio <= 0.25:
         lines.append("■ 角色声音：不同角色词彙/句式/话题偏好须有明显差异")
         lines.append("  测试：删除说话者标签，能否分辨是谁说的？")
 
-    # 微限冲突（中期轮次重点）
-    if 2 <= plan.round_index < plan.max_rounds - 1:
+    # 微限冲突（25%-50%轮次）
+    if 0.25 < round_ratio <= 0.50:
         lines.append("■ 微限冲突：每句对白之间须有微小张力变化")
         lines.append("  - 来回之间制造犹豫、停顿、打断")
         lines.append("  - 让对白像乒乓球来回，而非网球")
 
-    # 非直接冲突（收尾轮重点）
-    if plan.is_final_round or plan.should_warn_wrap_up:
+    # 非直接冲突（50%-75%轮次）
+    if 0.50 < round_ratio <= 0.75:
         lines.append("■ 非直接冲突：适当使用沉默、绕弯子、替代话题")
         lines.append("  - 有时不说不比说更有力量")
 
-    # 自反性冲突（收尾轮或情感高潮时）
-    if plan.is_final_round:
+    # 自反性冲突（75%-100%轮次，收尾/情感高潮）
+    if round_ratio > 0.75:
         lines.append("■ 自反性冲突：角色内心挣扎须有体现")
         lines.append("  - 可用半句、沉默、内心独白表达")
 
@@ -189,7 +201,33 @@ def build_dialogue_hint_text(plan: ContinuationRoundPlan) -> str:
 def build_budget_hint_text(
     plan: ContinuationRoundPlan,
     continuation_guidance: str | None = None,
+    beat_list: Optional[list[dict]] = None,
 ) -> str:
+    # 从完整 beat_list 中提取当前节拍和上一节拍
+    current_beat: Optional[BeatInfo] = None
+    previous_beat: Optional[BeatInfo] = None
+    if beat_list:
+        idx = plan.round_index - 1
+        if 0 <= idx < len(beat_list):
+            b = beat_list[idx]
+            current_beat = BeatInfo(
+                beat_id=b.get("beat_id", idx + 1),
+                beat_action=b.get("beat_action", ""),
+                beat_subtext_action=b.get("beat_subtext_action"),
+                turning_point=b.get("turning_point", False),
+            )
+        # 非首个节拍时提取上一节拍
+        if plan.round_index != 1:
+            prev_idx = idx - 1
+            if 0 <= prev_idx < len(beat_list):
+                pb = beat_list[prev_idx]
+                previous_beat = BeatInfo(
+                    beat_id=pb.get("beat_id", prev_idx + 1),
+                    beat_action=pb.get("beat_action", ""),
+                    beat_subtext_action=pb.get("beat_subtext_action"),
+                    turning_point=pb.get("turning_point", False),
+                )
+
     lines: list[str] = ["【续写预算】", f"- 当前总字数：{plan.current_word_count} 字"]
 
     if plan.target_word_count is not None:
@@ -225,9 +263,29 @@ def build_budget_hint_text(
     else:
         lines.append("- 当前为智能字数控制模式：前两轮优先推进剧情，后续逐步收束字数并完成结尾。")
 
+    # 注入当前节拍的具体内容
+    if current_beat is not None:
+        lines.append(f"- 节拍动作：{current_beat.beat_action}")
+        if current_beat.beat_subtext_action:
+            lines.append(f"- 潜文本动作：{current_beat.beat_subtext_action}")
+        if current_beat.turning_point:
+            lines.append("本章关键转折，需充分展开并自然收束")
+
+
+    # 注入上一节拍的参考内容（非首个节拍时）
+    if previous_beat is not None:
+        lines.append("")
+        lines.append("【上一节拍参考】")
+        lines.append(f"- 上一节拍动作：{previous_beat.beat_action}")
+        if previous_beat.beat_subtext_action:
+            lines.append(f"- 上一节拍潜文本动作：{previous_beat.beat_subtext_action}")
+        if previous_beat.turning_point:
+            lines.append("- 上一节拍是关键转折")
+
+
     if plan.should_warn_wrap_up:
         if plan.rounds_left >= 3:
-            lines.append("- 已进入最后一千字的收尾阶段：请开始压缩支线、回收信息，并为后续 600 / 300 / 100 的收尾节奏预留空间。")
+            lines.append("- 已进入最后一千字的收尾阶段：请开始压缩支线、回收信息，并为后续的收尾节奏预留空间。")
         elif plan.rounds_left == 2:
             lines.append("- 只剩最后两轮：请明显加快收束节奏，不要再开启新支线，并把最后一轮尽量压到约 100 字。")
 

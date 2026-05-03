@@ -601,6 +601,20 @@ async def generate_continuation_streaming(
             break
 
 
+def _parse_beat_list(request) -> Optional[list[dict]]:
+    """解析 request.beat_list_json 为完整节拍列表"""
+    raw = getattr(request, "beat_list_json", None)
+    if not raw:
+        return None
+    try:
+        beat_list = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(beat_list, list):
+        return None
+    return beat_list
+
+
 def _build_continuation_user_prompt(
     request: ContinuationRequest,
     round_plan,
@@ -640,7 +654,8 @@ def _build_continuation_user_prompt(
             else:
                 user_prompt_parts.append("【指令】请开始创作新章节。直接输出小说正文。")
 
-    budget_hint = build_budget_hint_text(round_plan, getattr(request, "continuation_guidance", None))
+    beat_list = _parse_beat_list(request)
+    budget_hint = build_budget_hint_text(round_plan, getattr(request, "continuation_guidance", None), beat_list)
     if budget_hint:
         user_prompt_parts.append(budget_hint)
 
@@ -672,14 +687,18 @@ async def _stream_continuation_single_round(
             raise ValueError(f"LLM配额不足: {reason}")
 
     # 使用LangChain ChatModel进行流式续写
+    # balanced + 非终轮：使用 hard_word_limit 作为 max_tokens（*2.4 转为 token 数）
+    _max_tokens = round_plan.max_tokens
+    if round_plan.mode != "prompt_only" and round_plan.hard_word_limit is not None:
+        _max_tokens = int(round_plan.hard_word_limit * 2.4)
     model = build_chat_model(
         session=session,
         llm_config_id=request.llm_config_id,
         temperature=request.temperature or 0.7,
-        max_tokens=round_plan.max_tokens,
+        max_tokens=_max_tokens,
         timeout=request.timeout or 64,
         thinking_enabled=True,
-        reasoning_effort="max", 
+        reasoning_effort="max",
     )
 
     messages = [

@@ -2970,6 +2970,24 @@ function handleContinuationDialogConfirm(payload: {
 	void runContinuationWithConfig(payload)
 }
 
+function getCurrentChapterOutlineCard(): CardRead | undefined {
+	const allCards = cards.value || []
+	const content = localCard.content as any
+	const vol = content?.volume_number
+	const ch = content?.chapter_number
+	const stage = content?.stage_number
+	if (vol == null || ch == null) return undefined
+	for (const c of allCards) {
+		if (c.card_type?.name !== '章节大纲') continue
+		const cc = c.content as any
+		if (cc?.volume_number !== vol) continue
+		if (cc?.chapter_number !== ch) continue
+		if (stage != null && cc?.stage_number !== stage) continue
+		return c
+	}
+	return undefined
+}
+
 async function runContinuationWithConfig(payload: {
 	targetWordCount: number
 	wordControlMode: ContinuationWordControlMode
@@ -3029,6 +3047,14 @@ async function runContinuationWithConfig(payload: {
 	} catch {}
 
 	applyContinuationScope(requestData)
+
+	// 提取当前章纲卡的beat_list传入后端
+	try {
+		const chapterCard = getCurrentChapterOutlineCard()
+		if (chapterCard?.content?.beat_list) {
+			;(requestData as any).beat_list_json = JSON.stringify(chapterCard.content.beat_list)
+		}
+	} catch {}
 
 	if (view) { view.focus(); const end = view.state.doc.length; view.dispatch({ selection: { anchor: end } }) }
 

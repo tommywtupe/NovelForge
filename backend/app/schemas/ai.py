@@ -30,6 +30,7 @@ class ContinuationRequest(BaseModel):
         description="字数控制模式：prompt_only / balanced",
     )
     continuation_guidance: Optional[str] = Field(default=None, description="续写指导要求")
+    beat_list_json: Optional[str] = Field(default=None, description="章节节拍列表的JSON字符串，前端从章纲卡beat_list解析后传入")
     budget_round_hint: Optional[int] = Field(default=None, description="预算运行时回灌的当前轮次提示")
     remaining_word_count_hint: Optional[int] = Field(default=None, description="预算运行时回灌的剩余字数提示")
     is_final_round_hint: Optional[bool] = Field(default=None, description="预算运行时回灌的最后一轮标记")
