@@ -24,6 +24,7 @@ from app.services.ai.generation.structured_runtime import (
     generate_structured_via_instruction_flow_model,
 )
 from app.schemas.ai import ContinuationRequest
+from app.services import prompt_service
 from .chat_model_factory import build_chat_model
 from .token_utils import calc_input_tokens, estimate_tokens
 from .quota_manager import precheck_quota, record_usage
@@ -510,6 +511,81 @@ async def _generate_structured_native(
     )
 
 
+async def _polish_text_streaming(
+    session: Session,
+    request: ContinuationRequest,
+    raw_text: str,
+) -> AsyncGenerator[str, None]:
+    """对刚生成的原文进行润色，流式返回润色结果
+
+    使用独立的"内容生成单独润色"prompt，专门针对生成内容润色场景。
+    润色失败时静默fallback到原文。
+    """
+    try:
+        p = prompt_service.get_prompt_by_name(session, "内容生成单独润色")
+        if not p or not p.template:
+            logger.warning("未找到'内容生成单独润色'提示词，跳过润色")
+            for chunk in _chunk_text(raw_text):
+                yield chunk
+            return
+
+        polish_system_prompt = prompt_service.inject_knowledge(session, str(p.template))
+
+        # 组装润色 user prompt
+        parts: list[str] = []
+        context_info = (getattr(request, "context_info", None) or "").strip()
+        if context_info:
+            parts.append(context_info)
+        parts.append(f"【需要润色的原文】\n{raw_text}")
+        polish_user_prompt = "\n\n".join(parts)
+        # 润色使用较低的推理强度
+        # polish_max_tokens = max(2048, int(len(raw_text) * 2.8))
+        polish_max_tokens = int(len(raw_text) * 1.1)
+        model = build_chat_model(
+            session=session,
+            llm_config_id=request.llm_config_id,
+            # temperature=request.temperature or 0.7,
+            temperature=0.7,
+            max_tokens=polish_max_tokens,
+            timeout=request.timeout or 180,
+            thinking_enabled=False,
+            # reasoning_effort="max",
+        )
+
+        messages = [
+            SystemMessage(content=polish_system_prompt),
+            HumanMessage(content=polish_user_prompt),
+        ]
+
+        logger.info(f"[润色] 开始，原文长度={len(raw_text)} 字，max_tokens={polish_max_tokens}, 【需要润色的原文】, {polish_user_prompt}")
+
+        polished_total = 0
+        async for chunk in model.astream(messages):
+            content = getattr(chunk, "content", None)
+            if not content:
+                continue
+            if isinstance(content, str):
+                polished_total += len(content)
+                yield content
+            elif isinstance(content, list):
+                for part in content:
+                    text = part.get("text", "") if isinstance(part, dict) else str(part)
+                    if text:
+                        polished_total += len(text)
+                        yield text
+            else:
+                text = str(content)
+                polished_total += len(text)
+                yield text
+
+        logger.info(f"[润色] 完成，润色后长度={polished_total} 字")
+
+    except Exception as e:
+        logger.warning(f"[润色] 调用失败，回退到原文: {e}")
+        for chunk in _chunk_text(raw_text):
+            yield chunk
+
+
 async def generate_continuation_streaming(
     session: Session,
     request: ContinuationRequest,
@@ -535,6 +611,32 @@ async def generate_continuation_streaming(
     expected_rounds = estimate_required_call_count(request)
     if control_mode == "prompt_only" or expected_rounds <= 1:
         round_plan = build_round_plan(request, current_word_count, 1)
+
+        # 润色模式：缓冲生成文本后润色再输出
+        if getattr(request, "enable_polish", False):
+            logger.info("[续写-单轮-润色模式] 开始生成原文")
+            round_chunks: list[str] = []
+            async for chunk in _stream_continuation_single_round(
+                session=session,
+                request=request,
+                system_prompt=system_prompt,
+                round_plan=round_plan,
+                track_stats=track_stats,
+            ):
+                round_chunks.append(chunk)
+            round_text = "".join(round_chunks)
+            logger.info(f"[续写-单轮-润色模式] 原文生成完成，长度={len(round_text)} 字")
+            if round_text.strip():
+                trim_result = trim_generated_text(round_text, round_plan)
+                final_text = trim_result.text
+                logger.info(f"[续写-单轮-润色模式] trim 完成，trimmed={trim_result.trimmed}，长度={len(final_text)} 字")
+                if final_text.strip():
+                    logger.info("[续写-单轮-润色模式] 开始润色")
+                    async for polished_chunk in _polish_text_streaming(session, request, final_text):
+                        yield polished_chunk
+                    logger.info("[续写-单轮-润色模式] 润色+输出完成")
+            return
+
         async for chunk in _stream_continuation_single_round(
             session=session,
             request=request,
@@ -546,8 +648,13 @@ async def generate_continuation_streaming(
         return
 
     current_content = request.previous_content or ""
+    enable_polish = getattr(request, "enable_polish", False)
+    if enable_polish:
+        logger.info(f"[续写-多轮-润色模式] 开始，预期轮数={expected_rounds}")
 
     for round_index in range(1, expected_rounds + 1):
+        if enable_polish:
+            logger.info(f"[续写-多轮-润色模式] 第{round_index}/{expected_rounds} 轮开始")
         round_plan = build_round_plan(request, current_word_count, round_index)
         round_request = request.model_copy(update={
             "previous_content": current_content,
@@ -558,8 +665,54 @@ async def generate_continuation_streaming(
             "is_final_round_hint": round_plan.is_final_round,
         })
 
+        # ---- 润色模式：缓冲 → trim → 润色 → 流式输出 ----
+        if enable_polish:
+            round_chunks: list[str] = []
+            async for chunk in _stream_continuation_single_round(
+                session=session,
+                request=round_request,
+                system_prompt=system_prompt,
+                round_plan=round_plan,
+                track_stats=track_stats,
+            ):
+                round_chunks.append(chunk)
+
+            round_text = "".join(round_chunks)
+            logger.info(f"[续写-多轮-润色模式] 第{round_index}轮原文生成完成，长度={len(round_text)} 字")
+            if not round_text.strip():
+                logger.warning("续写预算运行时在第 {} 轮拿到空输出，提前结束。", round_index)
+                break
+
+            trim_result = trim_generated_text(round_text, round_plan)
+            final_text = trim_result.text
+            logger.info(f"[续写-多轮-润色模式] 第{round_index}轮 trim 完成，trimmed={trim_result.trimmed}，长度={len(final_text)} 字")
+            if not final_text.strip():
+                logger.warning("续写预算运行时在第 {} 轮裁剪后为空，提前结束。", round_index)
+                break
+
+            # 润色输出并累加
+            logger.info(f"[续写-多轮-润色模式] 第{round_index}轮开始润色")
+            polished_acc = ""
+            async for polished_chunk in _polish_text_streaming(session, round_request, final_text):
+                polished_acc += polished_chunk
+                yield polished_chunk
+
+            logger.info(f"[续写-多轮-润色模式] 第{round_index}轮润色完成，润色后长度={len(polished_acc)} 字")
+            current_content = f"{current_content}{polished_acc}"
+            current_word_count = count_text_units(current_content)
+
+            target_word_count = getattr(request, "target_word_count", None)
+            if target_word_count is not None and current_word_count >= target_word_count:
+                logger.info(f"[续写-多轮-润色模式] 达到目标字数 {target_word_count}，结束")
+                break
+            if round_plan.is_final_round:
+                logger.info(f"[续写-多轮-润色模式] 第{round_index}轮为最终轮，结束")
+                break
+            continue
+
+        # ---- 非润色模式：现有行为不变 ----
         round_chunks: list[str] = []
-        
+
         async for chunk in _stream_continuation_single_round(
             session=session,
             request=round_request,

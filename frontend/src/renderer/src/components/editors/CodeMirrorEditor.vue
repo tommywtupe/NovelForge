@@ -318,6 +318,7 @@
 			:target-word-count="continuationDialogState.targetWordCount"
 			:word-control-mode="continuationDialogState.wordControlMode"
 			:guidance="continuationDialogState.guidance"
+			:enable-polish="continuationDialogState.enablePolish"
 			@confirm="handleContinuationDialogConfirm"
 		/>
 
@@ -1865,10 +1866,12 @@ const continuationDialogState = reactive<{
 	targetWordCount: number
 	wordControlMode: ContinuationWordControlMode
 	guidance: string
+	enablePolish: boolean
 }>({
 	targetWordCount: 4000,
 	wordControlMode: 'balanced',
 	guidance: '',
+	enablePolish: true,
 })
 
 const memoryPreviewTitleResolved = computed(() => {
@@ -2411,6 +2414,7 @@ function getSelectionWithLineInfo(): {
 function resolveContinuationDefaults() {
 	let targetWordCount = 4000
 	let wordControlMode: ContinuationWordControlMode = 'balanced'
+	let enablePolish = true
 	try {
 		const storedTarget = Number(localStorage.getItem(`nf:chapter:continuation-target:${props.card.id}`) || '')
 		if (Number.isFinite(storedTarget) && storedTarget > 0) targetWordCount = Math.floor(storedTarget)
@@ -2420,10 +2424,12 @@ function resolveContinuationDefaults() {
 		} else if (storedMode === 'strict') {
 			wordControlMode = 'balanced'
 		}
+		const storedPolish = localStorage.getItem(`nf:chapter:continuation-polish:${props.card.id}`)
+		enablePolish = storedPolish === '1'
 	} catch {
 		// ignore localStorage errors
 	}
-	return { targetWordCount, wordControlMode, guidance: '' }
+	return { targetWordCount, wordControlMode, guidance: '', enablePolish }
 }
 
 function getText(): string {
@@ -2950,6 +2956,7 @@ async function executeAIContinuation() {
 	continuationDialogState.targetWordCount = defaults.targetWordCount
 	continuationDialogState.wordControlMode = defaults.wordControlMode
 	continuationDialogState.guidance = defaults.guidance
+	continuationDialogState.enablePolish = defaults.enablePolish
 	continuationDialogVisible.value = true
 }
 
@@ -2957,13 +2964,14 @@ function handleContinuationDialogConfirm(payload: {
 	targetWordCount: number
 	wordControlMode: ContinuationWordControlMode
 	guidance: string
+	enablePolish: boolean
 }) {
 	activeContinuationConfig.targetWordCount = payload.targetWordCount
 	activeContinuationConfig.wordControlMode = payload.wordControlMode
 	try {
 		localStorage.setItem(`nf:chapter:continuation-target:${props.card.id}`, String(payload.targetWordCount))
 		localStorage.setItem(`nf:chapter:continuation-mode:${props.card.id}`, payload.wordControlMode)
-		localStorage.removeItem(`nf:chapter:continuation-guidance:${props.card.id}`)
+		localStorage.setItem(`nf:chapter:continuation-polish:${props.card.id}`, payload.enablePolish ? '1' : '0')
 	} catch {
 		// ignore localStorage errors
 	}
@@ -2992,6 +3000,7 @@ async function runContinuationWithConfig(payload: {
 	targetWordCount: number
 	wordControlMode: ContinuationWordControlMode
 	guidance: string
+	enablePolish: boolean
 }) {
 	if (!ensureNoPendingAiEdit()) return
 	const llmConfigId = resolveLlmConfigId()
@@ -3033,6 +3042,7 @@ async function runContinuationWithConfig(payload: {
 	;(requestData as any).target_word_count = payload.targetWordCount
 	;(requestData as any).word_control_mode = payload.wordControlMode
 	;(requestData as any).continuation_guidance = payload.guidance || undefined
+	;(requestData as any).enable_polish = payload.enablePolish
 
 	try {
 		const { temperature, max_tokens, timeout } = resolveSampling()

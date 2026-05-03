@@ -38,6 +38,8 @@ class ContinuationRequest(BaseModel):
     prompt_name: Optional[str] = Field(default=None, description="参数卡选择的提示词名称")
     # 是否追加"直接输出连续的小说正文"尾缀（默认 True 兼容原有续写）
     append_continuous_novel_directive: bool = Field(default=True, description="是否追加连续小说正文指令")
+    # 内容生成单独润色
+    enable_polish: bool = Field(default=False, description="启用后每轮生成完调用'内容生成单独润色'prompt二次润色")
 
 class ContinuationResponse(BaseModel):
     content: str

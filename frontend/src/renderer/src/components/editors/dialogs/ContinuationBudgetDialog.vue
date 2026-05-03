@@ -36,6 +36,10 @@
             <p v-if="localWordControlMode === 'balanced'">该模式下创作可能会消耗更多 token；如果对字数要求没那么严格，可以使用提示词约束模式。</p>
           </div>
         </el-form-item>
+        <el-form-item label="自动润色">
+          <el-switch v-model="localEnablePolish" active-text="开" inactive-text="关" />
+          <span class="helper-text">开启后每轮生成完自动调用润色模型优化表达，去除AI味</span>
+        </el-form-item>
       </el-form>
     </div>
     <template #footer>
@@ -57,6 +61,7 @@ const props = defineProps<{
   targetWordCount: number
   wordControlMode: ContinuationWordControlMode
   guidance: string
+  enablePolish: boolean
 }>()
 
 const emit = defineEmits<{
@@ -67,6 +72,7 @@ const emit = defineEmits<{
       targetWordCount: number
       wordControlMode: ContinuationWordControlMode
       guidance: string
+      enablePolish: boolean
     }
   ): void
 }>()
@@ -74,6 +80,7 @@ const emit = defineEmits<{
 const localTargetWordCount = ref<number>(4000)
 const localWordControlMode = ref<ContinuationWordControlMode>('balanced')
 const localGuidance = ref<string>('')
+const localEnablePolish = ref<boolean>(false)
 
 watch(
   () => props.visible,
@@ -82,6 +89,7 @@ watch(
     localTargetWordCount.value = props.targetWordCount || 4000
     localWordControlMode.value = props.wordControlMode || 'balanced'
     localGuidance.value = props.guidance || ''
+    localEnablePolish.value = props.enablePolish ?? false
   },
   { immediate: true }
 )
@@ -95,6 +103,7 @@ function handleConfirm() {
     targetWordCount: Math.max(200, Math.floor(localTargetWordCount.value || 4000)),
     wordControlMode: localWordControlMode.value,
     guidance: localGuidance.value.trim(),
+    enablePolish: localEnablePolish.value,
   })
   emit('update:visible', false)
 }
