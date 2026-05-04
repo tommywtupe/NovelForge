@@ -32,6 +32,7 @@ class BeatInfo:
     beat_action: str
     beat_subtext_action: Optional[str] = None
     turning_point: bool = False
+    beat_main_perspective: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -202,6 +203,7 @@ def build_budget_hint_text(
     plan: ContinuationRoundPlan,
     continuation_guidance: str | None = None,
     beat_list: Optional[list[dict]] = None,
+    character_context: Optional[dict[str, str]] = None,
 ) -> str:
     # 从完整 beat_list 中提取当前节拍和上一节拍
     current_beat: Optional[BeatInfo] = None
@@ -215,6 +217,7 @@ def build_budget_hint_text(
                 beat_action=b.get("beat_action", ""),
                 beat_subtext_action=b.get("beat_subtext_action"),
                 turning_point=b.get("turning_point", False),
+                beat_main_perspective=b.get("beat_main_perspective"),
             )
         # 非首个节拍时提取上一节拍
         if plan.round_index != 1:
@@ -226,6 +229,7 @@ def build_budget_hint_text(
                     beat_action=pb.get("beat_action", ""),
                     beat_subtext_action=pb.get("beat_subtext_action"),
                     turning_point=pb.get("turning_point", False),
+                    beat_main_perspective=pb.get("beat_main_perspective"),
                 )
 
     lines: list[str] = ["【续写预算】", f"- 当前总字数：{plan.current_word_count} 字"]
@@ -270,6 +274,8 @@ def build_budget_hint_text(
             lines.append(f"- 潜文本动作：{current_beat.beat_subtext_action}")
         if current_beat.turning_point:
             lines.append("本章关键转折，需充分展开并自然收束")
+        if current_beat.beat_main_perspective:
+            lines.append(f"- 本回合主视角人物：{current_beat.beat_main_perspective}")
 
 
     # 注入上一节拍的参考内容（非首个节拍时）
@@ -300,6 +306,28 @@ def build_budget_hint_text(
         lines.append("2. 当本轮字数达到上限或节拍内容完成时，必须输出 <节拍完成> 标记")
         lines.append("3. 标记出现后立即停止输出，等待下一轮指令")
         lines.append("4. <节拍完成> 标记仅作为结束信号，不会出现在正文中")
+
+    # 角色身份：从上下文注入角色卡完整资料
+    if current_beat is not None and current_beat.beat_main_perspective:
+        perspective_name = current_beat.beat_main_perspective
+        char_desc = (character_context or {}).get(perspective_name, '')
+        if char_desc:
+            lines.append("")
+            lines.append("【角色身份】")
+            lines.append(char_desc)
+
+    # 角色沉浸要求：当设置了主视角人物时注入
+    if current_beat is not None and current_beat.beat_main_perspective:
+        lines.append("")
+        lines.append("【角色沉浸要求】在你的思考过程（<think>标签内）中，请严格遵守以下规则：")
+        lines.append("")
+        lines.append(f'1. **主视角锁定**：始终以{current_beat.beat_main_perspective}的第一人称进行内心独白，思考中用"我心想""我觉得""我注意到"等表达。**严禁切换到其他角色的第一人称视角**。你可以猜测他们的人物心理，但必须用"他可能……""她看起来……"这样的外部推测句式。')
+        lines.append("")
+        lines.append('2. **格式要求**：内心独白用圆括号包裹，例如"（我心想：他的手指在桌下抖动，这很可疑。）"')
+        lines.append("")
+        lines.append(f"3. **内容要求**：思考必须保持{current_beat.beat_main_perspective}的职业特质——冷静、细致、多疑。分析应侧重于肢体语言、话语矛盾、逻辑漏洞。")
+        lines.append("")
+        lines.append("4. **禁止事项**：不得在思考中出现任何其他角色的第一人称代入。")
 
     return "\n".join(lines).strip()
 

@@ -55,6 +55,7 @@ FIELD_TITLE_ZH_MAP: Dict[str, str] = {
     "stage_number": "阶段号",
     "chapter_number": "章节号",
     "beat_list": "节拍列表",
+    "beat_main_perspective": "节拍主视角",
     "entity_list": "实体列表",
     "stage_name": "阶段名称",
     "reference_chapter": "参考章节范围",
@@ -257,7 +258,7 @@ def create_default_card_types(session: Session) -> None:
             "概念卡:@type:概念卡[index=filter:content.name in $self.content.entity_list].{content.name,content.category,content.description,content.rule_definition,content.mastery_hint}\n"
             "最近的章节原文，确保能够衔接剧情:@type:章节正文[previous:1].{content.title,content.chapter_number,content.content}\n"
             "参与者实体列表，确保生成内容只会出场这些实体:@self.content.entity_list\n"
-            "请根据 @self.content.chapter_number： @self.content.title 的大纲@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.overview,content.beat_list} 来创作章节正文内容。节拍列表说明：每个节拍约1000字，包含beat_id（序号）、beat_action（角色动作）、beat_subtext_action（动作潜文本）、turning_point（是否转折点）。请按节拍顺序创作，可以适当发散、设计与大纲内容不冲突的剧情来进行扩充。你无需在正文中重复标题：@self.content.title \n"
+            "请根据 @self.content.chapter_number： @self.content.title 的大纲@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.overview,content.beat_list} 来创作章节正文内容。节拍列表说明：包含beat_id（序号）、beat_action（角色动作）、beat_subtext_action（动作潜文本）、turning_point（是否转折点）、beat_main_perspective（主视角人物）。请根据beat_main_perspective指示的主视角人物来切换叙事焦点。请按节拍顺序创作，可以适当发散、设计与大纲内容不冲突的剧情来进行扩充。你无需在正文中重复标题：@self.content.title \n"
             "注意，写作时必须保证结尾剧情与下一章的剧情大纲不会冲突，且不会提前涉及下一章剧情(如果存在的话):@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{content.title,content.overview}\n"
             "写作时请结合写作指南要求:@type:写作指南[index=filter:content.volume_number = $self.content.volume_number].{content.content}\n"
             "请确保本次完成整个节拍的内容，且字数贴近限制要求。\n"

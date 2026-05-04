@@ -768,6 +768,142 @@ def _parse_beat_list(request) -> Optional[list[dict]]:
     return beat_list
 
 
+def _format_character_text(c: dict) -> str:
+    """将角色 JSON 数据转换为自然语言描述"""
+    parts = []
+    name = str(c.get('name', '')).strip()
+    desc = str(c.get('description', '')).strip()
+    role = str(c.get('role_type', '')).strip()
+    personality = str(c.get('personality', '')).strip()
+    born_scene = str(c.get('born_scene', '')).strip()
+    core_desire = str(c.get('core_desire', '')).strip()
+    core_fear = str(c.get('core_fear', '')).strip()
+    core_drive = str(c.get('core_drive', '')).strip()
+    character_arc = str(c.get('character_arc', '')).strip()
+    trauma = str(c.get('psychological_trauma', '')).strip()
+    defense = str(c.get('defense_mechanism', '')).strip()
+    appearance = str(c.get('appearance', '')).strip()
+    physique = str(c.get('physique', '')).strip()
+    aura = str(c.get('aura', '')).strip()
+    dressing = str(c.get('dressing', '')).strip()
+    public_persona = str(c.get('public_persona', '')).strip()
+    private_persona = str(c.get('private_persona', '')).strip()
+    shadow_self = str(c.get('the_shadow_self', '')).strip()
+    life_span = str(c.get('life_span', '')).strip()
+    dynamic_info = str(c.get('dynamic_info', '')).strip()
+
+    # 基本身份
+    identity = f"你是{name}"
+    if role:
+        identity += f"，角色定位为{role}"
+    if desc:
+        identity += f"。{desc}"
+    parts.append(identity)
+
+    # 外貌体态
+    if appearance or physique or aura or dressing:
+        look = "你的外在形象："
+        look_parts = []
+        if physique:
+            look_parts.append(f"体态{physique}")
+        if aura:
+            look_parts.append(f"气质{aura}")
+        if appearance:
+            look_parts.append(f"相貌{appearance}")
+        if dressing:
+            look_parts.append(f"衣着{dressing}")
+        look += "，".join(look_parts)
+        parts.append(look)
+
+    # 性格与心理
+    inner = []
+    if personality:
+        inner.append(f"性格{personality}")
+    if core_desire:
+        inner.append(f"核心渴望是{core_desire}")
+    if core_fear:
+        inner.append(f"核心恐惧是{core_fear}")
+    if core_drive:
+        inner.append(f"核心驱动力是{core_drive}")
+    if trauma:
+        inner.append(f"心理创伤：{trauma}")
+    if defense:
+        inner.append(f"防御机制：{defense}")
+    if inner:
+        parts.append("你的内在特质：" + "；".join(inner))
+
+    # 面具与真实
+    mask = []
+    if public_persona:
+        mask.append(f"在人前你展现的是{public_persona}")
+    if private_persona:
+        mask.append(f"亲近之人看到的是{private_persona}")
+    if shadow_self:
+        mask.append(f"你内心不愿承认的真实面目是{shadow_self}")
+    if mask:
+        parts.append("关于你的面具与真实：" + "；".join(mask))
+
+    # 故事信息
+    story = []
+    if born_scene:
+        story.append(f"出场场景：{born_scene}")
+    if character_arc:
+        story.append(f"角色弧光：{character_arc}")
+    if life_span:
+        story.append(f"生命周期：{life_span}")
+    if dynamic_info:
+        story.append(f"动态信息：{dynamic_info}")
+    if story:
+        parts.append("故事相关信息：" + "；".join(story))
+
+    return "。\n".join(parts)
+
+
+def _parse_characters_from_context(context_info: str) -> dict[str, str]:
+    """从 context_info 中解析角色卡列表，返回 {name: 自然语言角色描述}"""
+    result: dict[str, str] = {}
+    # 找到 "角色卡:" 标记位置
+    idx = context_info.find('角色卡:')
+    if idx < 0:
+        return result
+    # 跳过标记后的空白字符，定位 JSON 数组起始位置
+    tail = context_info[idx + len('角色卡:'):].lstrip()
+    if not tail.startswith('['):
+        logger.debug("_parse_characters_from_context: 角色卡: 后不是 JSON 数组")
+        return result
+    # 括号计数法找到匹配的 ']'
+    depth = 0
+    json_end = -1
+    for i, ch in enumerate(tail):
+        if ch == '[':
+            depth += 1
+        elif ch == ']':
+            depth -= 1
+            if depth == 0:
+                json_end = i + 1
+                break
+    if json_end < 0:
+        logger.debug("_parse_characters_from_context: 未找到匹配的 ]")
+        return result
+    json_text = tail[:json_end]
+    try:
+        chars = json.loads(json_text)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("_parse_characters_from_context: JSON 解析失败, json_text preview=%s", json_text[:200])
+        return result
+    if not isinstance(chars, list):
+        logger.debug("_parse_characters_from_context: 角色卡 JSON 不是列表")
+        return result
+    for c in chars:
+        if not isinstance(c, dict):
+            continue
+        name = str(c.get('name', '')).strip()
+        if not name:
+            continue
+        result[name] = _format_character_text(c)
+    return result
+
+
 def _build_continuation_user_prompt(
     request: ContinuationRequest,
     round_plan,
@@ -807,15 +943,16 @@ def _build_continuation_user_prompt(
             else:
                 user_prompt_parts.append("【指令】请开始创作新章节。直接输出小说正文。")
 
-    beat_list = _parse_beat_list(request)
-    budget_hint = build_budget_hint_text(round_plan, getattr(request, "continuation_guidance", None), beat_list)
-    if budget_hint:
-        user_prompt_parts.append(budget_hint)
-
     #追加对白质量提示
     dialogue_hint = build_dialogue_hint_text(round_plan)
     if dialogue_hint:
         user_prompt_parts.append(dialogue_hint)
+
+    beat_list = _parse_beat_list(request)
+    character_context = _parse_characters_from_context(context_info or '')
+    budget_hint = build_budget_hint_text(round_plan, getattr(request, "continuation_guidance", None), beat_list, character_context)
+    if budget_hint:
+        user_prompt_parts.append(budget_hint)
 
     return "\n\n".join(user_prompt_parts)
 

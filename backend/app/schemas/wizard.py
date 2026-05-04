@@ -184,6 +184,7 @@ class BeatItem(BaseModel):
     beat_action: str = Field(description="节拍动作：描述该节拍中角色做了什么。详略得当，避免过于单薄。如果主角有了显著的提升，则相关信息不能省略，需要准确数据描述出来(如实力大幅提升、经济或资源大幅增长了多少)")
     beat_subtext_action: Optional[str] = Field(None, description="节拍潜文本动作：描述该动作背后的意图/含义")
     turning_point: bool = Field(default=False, description="是否为转折点")
+    beat_main_perspective: Optional[str] = Field(None, description="节拍主视角：从本章entity_list中的人物选择。默认为男主角（角色卡中role_type为'主角'的角色）。当男主角未出场、需要视角欺骗、或该节拍集中描述其他出场人物时，选择该节拍最核心的人物")
 
 
 class ChapterOutline(BaseModel):
@@ -197,8 +198,9 @@ class ChapterOutline(BaseModel):
     entity_list: List[str] = Field(
         description="章节中出场的重要实体列表，只能从上下文提供的组织/角色/场景/物品/概念卡实体中选择，不得新增、自创；实体名称必须是纯名称（不得包含括号/备注）。注意,为了精简上下文，避免实体列表中出现该章节未出场的冗余实体",
     )
-    beat_list: List[BeatItem] = Field(
-        description="章节节拍列表，每个节拍描述角色动作和潜文本，用于细化章节内的叙事节奏，1个节拍1000字，每个节拍占据本章25%的内容",
+    beat_list: Optional[List[BeatItem]] = Field(
+        default_factory=list,
+        description="章节节拍列表，每个节拍描述角色动作和潜文本，用于细化章节内的叙事节奏，1个节拍1000字，每个节拍占据本章25%的内容。注：此字段在阶段大纲生成时留空，节拍将在章节大纲阶段单独生成。"
     )
 
     
