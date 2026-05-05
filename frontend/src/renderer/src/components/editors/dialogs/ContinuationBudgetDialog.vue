@@ -80,7 +80,7 @@ const emit = defineEmits<{
 const localTargetWordCount = ref<number>(4000)
 const localWordControlMode = ref<ContinuationWordControlMode>('balanced')
 const localGuidance = ref<string>('')
-const localEnablePolish = ref<boolean>(false)
+const localEnablePolish = ref<boolean>(true)
 
 watch(
   () => props.visible,
@@ -89,7 +89,7 @@ watch(
     localTargetWordCount.value = props.targetWordCount || 4000
     localWordControlMode.value = props.wordControlMode || 'balanced'
     localGuidance.value = props.guidance || ''
-    localEnablePolish.value = props.enablePolish ?? false
+    localEnablePolish.value = props.enablePolish ?? true
   },
   { immediate: true }
 )
