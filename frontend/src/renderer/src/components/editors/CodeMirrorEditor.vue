@@ -1868,7 +1868,7 @@ const continuationDialogState = reactive<{
 	guidance: string
 	enablePolish: boolean
 }>({
-	targetWordCount: 4000,
+	targetWordCount: 4800,
 	wordControlMode: 'balanced',
 	guidance: '',
 	enablePolish: true,
@@ -2108,7 +2108,7 @@ const activeContinuationConfig = reactive<{
 	targetWordCount: number
 	wordControlMode: ContinuationWordControlMode
 }>({
-	targetWordCount: 4000,
+	targetWordCount: 4800,
 	wordControlMode: 'balanced',
 })
 
@@ -2412,7 +2412,7 @@ function getSelectionWithLineInfo(): {
 }
 
 function resolveContinuationDefaults() {
-	let targetWordCount = 4000
+	let targetWordCount = 4800
 	let wordControlMode: ContinuationWordControlMode = 'balanced'
 	let enablePolish = true
 	try {

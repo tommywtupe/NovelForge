@@ -200,7 +200,7 @@ class ChapterOutline(BaseModel):
     )
     beat_list: Optional[List[BeatItem]] = Field(
         default_factory=list,
-        description="章节节拍列表，每个节拍描述角色动作和潜文本，用于细化章节内的叙事节奏，1个节拍1000字，每个节拍占据本章25%的内容。注：此字段在阶段大纲生成时留空，节拍将在章节大纲阶段单独生成。"
+        description="章节节拍列表，每个节拍描述角色动作和潜文本，用于细化章节内的叙事节奏，1个节拍600字，每个节拍占据本章25%的内容。注：此字段在阶段大纲生成时留空，节拍将在章节大纲阶段单独生成。"
     )
 
     

@@ -68,3 +68,4 @@ backend/build
 
 # Node modules
 node_modules/
+temp-command.txt

@@ -52,6 +52,7 @@
     "electron-updater": "^6.6.2",
     "element-plus": "^2.10.4",
     "element-plus-x": "^1.1.11",
+    "jieba": "^1.0.0",
     "keytar": "^7.9.0",
     "lodash-es": "^4.17.21",
     "pinia": "^3.0.3",

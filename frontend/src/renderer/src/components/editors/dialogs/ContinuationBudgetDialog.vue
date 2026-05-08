@@ -77,7 +77,7 @@ const emit = defineEmits<{
   ): void
 }>()
 
-const localTargetWordCount = ref<number>(4000)
+const localTargetWordCount = ref<number>(4800)
 const localWordControlMode = ref<ContinuationWordControlMode>('balanced')
 const localGuidance = ref<string>('')
 const localEnablePolish = ref<boolean>(true)
@@ -86,7 +86,7 @@ watch(
   () => props.visible,
   (visible) => {
     if (!visible) return
-    localTargetWordCount.value = props.targetWordCount || 4000
+    localTargetWordCount.value = props.targetWordCount || 4800
     localWordControlMode.value = props.wordControlMode || 'balanced'
     localGuidance.value = props.guidance || ''
     localEnablePolish.value = props.enablePolish ?? true
@@ -100,7 +100,7 @@ function handleCancel() {
 
 function handleConfirm() {
   emit('confirm', {
-    targetWordCount: Math.max(200, Math.floor(localTargetWordCount.value || 4000)),
+    targetWordCount: Math.max(200, Math.floor(localTargetWordCount.value || 4800)),
     wordControlMode: localWordControlMode.value,
     guidance: localGuidance.value.trim(),
     enablePolish: localEnablePolish.value,

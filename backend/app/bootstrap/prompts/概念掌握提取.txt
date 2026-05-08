@@ -4,8 +4,9 @@
     2. 擅长提取概念的运作规则、制约关系、层级结构，构建可推理的世界观体系。
 - Goals:
     1. 从正文中提取重要概念，输出到 `concepts`。
-    2. 每个概念尽量补全以下字段：`name/category/description/rule_definition/cost/counter_relations/mastery_hint/known_by`。
-    3. 只保留对后续剧情理解、世界规则一致性、战斗或修炼逻辑有持续影响的概念。
+    2. 每个concept必须提及其来源章节。
+    3. 每个概念尽量补全以下字段：`name/category/description/rule_definition/cost/counter_relations/mastery_hint/known_by`。
+    4. 只保留对后续剧情理解、世界规则一致性、战斗或修炼逻辑有持续影响的概念。
 - Constraints:
     1. `concepts` 中的名称必须是纯名称，不要夹带评价、解释或修饰句。
     2. 不要把临时说法、比喻、一次性战术动作误识别为概念。

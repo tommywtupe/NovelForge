@@ -10,7 +10,16 @@
       "Bash(npm run build)",
       "Bash(npm run typecheck:web)",
       "Bash(python -m py_compile app/services/ai/generation/batch_chapter_service.py)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(rg:*)",
+      "Bash(sqlite3:*)",
+      "Bash(npm run typecheck)",
+      "Bash(git -C /workspace diff --cached --name-only)",
+      "Bash(git -C /workspace diff --name-only)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(npx vue-tsc --noEmit --skipLibCheck)",
+      "Bash(npx vue-tsc:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

@@ -83,7 +83,9 @@ async def generate_instruction_stream(
             llm_config_id=llm_config_id,
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=timeout
+            timeout=timeout or 180,
+            thinking_enabled=True,
+            reasoning_effort="max",
         )
     except Exception as e:
         logger.error(f"构建 ChatModel 失败: {e}")

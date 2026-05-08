@@ -106,15 +106,15 @@ watch(() => props.cardId, async (id) => {
 
 function getPresetForType(typeName?: string): PerCardAIParams {
 	const map: Record<string, PerCardAIParams> = {
-		'金手指': { prompt_name: '金手指生成', temperature: 0.6, max_tokens: 1024, timeout: 60 },
-		'一句话梗概': { prompt_name: '一句话梗概', temperature: 0.6, max_tokens: 1024, timeout: 60 },
-		'世界观设定': { prompt_name: '世界观设定', temperature: 0.6, max_tokens: 8192, timeout: 120 },
-		'核心蓝图': { prompt_name: '核心蓝图', temperature: 0.6, max_tokens: 8192, timeout: 120 },
-		'分卷大纲': { prompt_name: '分卷大纲', temperature: 0.6, max_tokens: 8192, timeout: 120 },
-		'阶段大纲': { prompt_name: '阶段大纲', temperature: 0.6, max_tokens: 8192, timeout: 120 },
-		'章节大纲': { prompt_name: '章节大纲', temperature: 0.6, max_tokens: 4096, timeout: 60 },
-		'写作指南': { prompt_name: '写作指南', temperature: 0.7, max_tokens: 8192, timeout: 60 },
-		'章节正文': { prompt_name: '内容生成', temperature: 1.3, max_tokens: 131072, timeout: 180 },
+		'金手指': { prompt_name: '金手指生成', temperature: 0.6, max_tokens: 65536, timeout: 300 },
+		'一句话梗概': { prompt_name: '一句话梗概', temperature: 0.6, max_tokens: 65536, timeout: 300 },
+		'世界观设定': { prompt_name: '世界观设定', temperature: 0.6, max_tokens: 65536, timeout: 300 },
+		'核心蓝图': { prompt_name: '核心蓝图', temperature: 0.6, max_tokens: 65536, timeout: 300 },
+		'分卷大纲': { prompt_name: '分卷大纲', temperature: 0.6, max_tokens: 65536, timeout: 300 },
+		'阶段大纲': { prompt_name: '阶段大纲', temperature: 0.6, max_tokens: 65536, timeout: 300 },
+		'章节大纲': { prompt_name: '章节大纲', temperature: 0.6, max_tokens: 65536, timeout: 300 },
+		'写作指南': { prompt_name: '写作指南', temperature: 0.7, max_tokens: 65536, timeout: 300 },
+		'章节正文': { prompt_name: '内容生成', temperature: 1.3, max_tokens: 131072, timeout: 300 },
 	}
 	return map[typeName || ''] || {}
 }

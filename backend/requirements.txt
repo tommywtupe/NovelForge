@@ -12,5 +12,6 @@ langchain>1.0
 langchain-openai
 langchain-google-genai
 langchain-anthropic
+langchain-deepseek
 langchain_qwq
 jieba

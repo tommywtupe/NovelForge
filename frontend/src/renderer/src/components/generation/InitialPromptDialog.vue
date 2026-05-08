@@ -22,7 +22,7 @@
         type="textarea"
         :rows="4"
         placeholder="例如：年轻武者，擅长剑术，性格沉稳..."
-        maxlength="500"
+        maxlength="5000"
         show-word-limit
         @keyup.ctrl.enter="handleStartGenerate"
       />

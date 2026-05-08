@@ -199,7 +199,7 @@ async def generate_line_by_line_streaming(
     mode = request.mode
     llm_config_id = request.llm_config_id
     temperature = request.temperature or 0.7
-    max_tokens = request.max_tokens or 16384
+    max_tokens = request.max_tokens or 65535
     timeout = request.timeout or 150
     context_info = request.context_info
 
@@ -515,12 +515,16 @@ async def _polish_text_streaming(
     session: Session,
     request: ContinuationRequest,
     raw_text: str,
+    track_stats: bool = True,
 ) -> AsyncGenerator[str, None]:
     """对刚生成的原文进行润色，流式返回润色结果
 
     使用独立的"内容生成单独润色"prompt，专门针对生成内容润色场景。
     润色失败时静默fallback到原文。
     """
+    polished_total = 0
+    accumulated: str = ""
+
     try:
         p = prompt_service.get_prompt_by_name(session, "内容生成单独润色")
         if not p or not p.template:
@@ -533,23 +537,40 @@ async def _polish_text_streaming(
 
         # 组装润色 user prompt
         parts: list[str] = []
-        context_info = (getattr(request, "context_info", None) or "").strip()
-        if context_info:
-            parts.append(context_info)
+        # context_info = (getattr(request, "context_info", None) or "").strip()
+        # if context_info:
+        #     parts.append(context_info)
         parts.append(f"【需要润色的原文】\n{raw_text}")
         polish_user_prompt = "\n\n".join(parts)
+
+        # 配额预检
+        if track_stats:
+            ok, reason = precheck_quota(
+                session,
+                request.llm_config_id,
+                calc_input_tokens(polish_system_prompt, polish_user_prompt),
+                need_calls=1,
+            )
+            if not ok:
+                logger.warning(f"[润色] 配额不足: {reason}，跳过润色")
+                for chunk in _chunk_text(raw_text):
+                    yield chunk
+                return
+
         # 润色使用较低的推理强度
         # polish_max_tokens = max(2048, int(len(raw_text) * 2.8))
-        polish_max_tokens = int(len(raw_text) * 1.1)
+        polish_max_tokens = int(len(raw_text) * 10)
         model = build_chat_model(
             session=session,
             llm_config_id=request.llm_config_id,
             # temperature=request.temperature or 0.7,
             temperature=0.7,
-            max_tokens=polish_max_tokens,
-            timeout=request.timeout or 180,
-            thinking_enabled=False,
-            # reasoning_effort="max",
+            # max_tokens=polish_max_tokens,
+            max_tokens=65536,
+            timeout=180,
+            thinking_enabled=True,
+            reasoning_effort="max",
+
         )
 
         messages = [
@@ -557,28 +578,92 @@ async def _polish_text_streaming(
             HumanMessage(content=polish_user_prompt),
         ]
 
-        logger.info(f"[润色] 开始，原文长度={len(raw_text)} 字，max_tokens={polish_max_tokens}, 【需要润色的原文】, {polish_user_prompt}")
+        logger.info(f"开始审核，提示词: {polish_system_prompt} \n\n {polish_user_prompt}")
 
-        polished_total = 0
+        # 润色也使用句子边界缓冲，保持与内容生成一致的流式体验
+        pending_buffer: str = ""
+        # 润色模式使用较高但无限大的硬限制，只按句子边界flush
+        SOFT_WORD_LIMIT = 100000  # 足够大的字数限制，确保不截断
+
         async for chunk in model.astream(messages):
             content = getattr(chunk, "content", None)
             if not content:
                 continue
+            print(f"润色content：{content}")
             if isinstance(content, str):
-                polished_total += len(content)
-                yield content
+                delta = content
             elif isinstance(content, list):
-                for part in content:
-                    text = part.get("text", "") if isinstance(part, dict) else str(part)
-                    if text:
-                        polished_total += len(text)
-                        yield text
+                texts = [
+                    part.get("text", "") if isinstance(part, dict) else str(part)
+                    for part in content
+                ]
+                delta = "".join(texts)
             else:
-                text = str(content)
-                polished_total += len(text)
-                yield text
+                delta = str(content)
+            if not delta:
+                continue
+
+            pending_buffer += delta
+            polished_total += len(delta)
+
+            # 按句子边界flush
+            emitted_text, pending_buffer, _ = _flush_streaming_buffer_with_limit(
+                already_emitted=accumulated,
+                pending_text=pending_buffer,
+                hard_limit=SOFT_WORD_LIMIT,
+                force_flush_tail=False,
+            )
+            if emitted_text:
+                accumulated += emitted_text
+                yield emitted_text
+
+        # 结束时flush剩余buffer
+        if pending_buffer:
+            emitted_tail, _, _ = _flush_streaming_buffer_with_limit(
+                already_emitted=accumulated,
+                pending_text=pending_buffer,
+                hard_limit=SOFT_WORD_LIMIT,
+                force_flush_tail=True,
+            )
+            if emitted_tail:
+                accumulated += emitted_tail
+                yield emitted_tail
 
         logger.info(f"[润色] 完成，润色后长度={polished_total} 字")
+
+        # 正常结束后统计
+        if track_stats:
+            try:
+                in_tokens = calc_input_tokens(polish_system_prompt, polish_user_prompt)
+                out_tokens = estimate_tokens(accumulated)
+                record_usage(
+                    session,
+                    request.llm_config_id,
+                    in_tokens,
+                    out_tokens,
+                    calls=1,
+                    aborted=False,
+                )
+            except Exception as stat_e:
+                logger.warning(f"[润色] 记录统计失败: {stat_e}")
+
+    except asyncio.CancelledError:
+        logger.info("[润色] 流式LLM调用被取消（CancelledError），停止推送。")
+        if track_stats:
+            try:
+                in_tokens = calc_input_tokens(polish_system_prompt, polish_user_prompt)
+                out_tokens = estimate_tokens(accumulated)
+                record_usage(
+                    session,
+                    request.llm_config_id,
+                    in_tokens,
+                    out_tokens,
+                    calls=1,
+                    aborted=True,
+                )
+            except Exception as stat_e:
+                logger.warning(f"[润色] 记录取消统计失败: {stat_e}")
+        return
 
     except Exception as e:
         logger.warning(f"[润色] 调用失败，回退到原文: {e}")
@@ -632,7 +717,7 @@ async def generate_continuation_streaming(
                 logger.info(f"[续写-单轮-润色模式] trim 完成，trimmed={trim_result.trimmed}，长度={len(final_text)} 字")
                 if final_text.strip():
                     logger.info("[续写-单轮-润色模式] 开始润色")
-                    async for polished_chunk in _polish_text_streaming(session, request, final_text):
+                    async for polished_chunk in _polish_text_streaming(session, request, final_text, track_stats):
                         yield polished_chunk
                     logger.info("[续写-单轮-润色模式] 润色+输出完成")
             return
@@ -667,20 +752,30 @@ async def generate_continuation_streaming(
 
         # ---- 润色模式：缓冲 → trim → 润色 → 流式输出 ----
         if enable_polish:
-            round_chunks: list[str] = []
-            async for chunk in _stream_continuation_single_round(
-                session=session,
-                request=round_request,
-                system_prompt=system_prompt,
-                round_plan=round_plan,
-                track_stats=track_stats,
-            ):
-                round_chunks.append(chunk)
+            MAX_EMPTY_RETRIES = 3
+            round_text = ""
+            for attempt in range(1, MAX_EMPTY_RETRIES + 1):
+                round_chunks: list[str] = []
+                async for chunk in _stream_continuation_single_round(
+                    session=session,
+                    request=round_request,
+                    system_prompt=system_prompt,
+                    round_plan=round_plan,
+                    track_stats=track_stats,
+                ):
+                    round_chunks.append(chunk)
+                round_text = "".join(round_chunks)
+                if round_text.strip():
+                    break
+                logger.warning("续写预算运行时在第 {} 轮拿到空输出，第 {}/{} 次尝试。",
+                               round_index, attempt, MAX_EMPTY_RETRIES)
+                if attempt < MAX_EMPTY_RETRIES:
+                    logger.info("续写预算运行时在第 {} 轮自动重试...", round_index)
 
-            round_text = "".join(round_chunks)
             logger.info(f"[续写-多轮-润色模式] 第{round_index}轮原文生成完成，长度={len(round_text)} 字")
             if not round_text.strip():
-                logger.warning("续写预算运行时在第 {} 轮拿到空输出，提前结束。", round_index)
+                logger.warning("续写预算运行时在第 {} 轮重试 {} 次后仍为空，提前结束。",
+                               round_index, MAX_EMPTY_RETRIES)
                 break
 
             trim_result = trim_generated_text(round_text, round_plan)
@@ -693,11 +788,13 @@ async def generate_continuation_streaming(
             # 润色输出并累加
             logger.info(f"[续写-多轮-润色模式] 第{round_index}轮开始润色")
             polished_acc = ""
-            async for polished_chunk in _polish_text_streaming(session, round_request, final_text):
+            async for polished_chunk in _polish_text_streaming(session, round_request, final_text, track_stats):
                 polished_acc += polished_chunk
                 yield polished_chunk
 
             logger.info(f"[续写-多轮-润色模式] 第{round_index}轮润色完成，润色后长度={len(polished_acc)} 字")
+            if not polished_acc.endswith('\n'):
+                yield '\n'
             current_content = f"{current_content}{polished_acc}"
             current_word_count = count_text_units(current_content)
 
@@ -710,26 +807,38 @@ async def generate_continuation_streaming(
                 break
             continue
 
-        # ---- 非润色模式：现有行为不变 ----
-        round_chunks: list[str] = []
-
-        async for chunk in _stream_continuation_single_round(
-            session=session,
-            request=round_request,
-            system_prompt=system_prompt,
-            round_plan=round_plan,
-            track_stats=track_stats,
-        ):
-
-            round_chunks.append(chunk)
-            if getattr(request, "stream", False):
-                yield chunk
-
-        round_text = "".join(round_chunks)
+        # ---- 非润色模式 ----
+        MAX_EMPTY_RETRIES = 3
+        round_text = ""
+        for attempt in range(1, MAX_EMPTY_RETRIES + 1):
+            round_chunks: list[str] = []
+            async for chunk in _stream_continuation_single_round(
+                session=session,
+                request=round_request,
+                system_prompt=system_prompt,
+                round_plan=round_plan,
+                track_stats=track_stats,
+            ):
+                round_chunks.append(chunk)
+            round_text = "".join(round_chunks)
+            if round_text.strip():
+                break
+            logger.warning("续写预算运行时在第 {} 轮拿到空输出，第 {}/{} 次尝试。",
+                           round_index, attempt, MAX_EMPTY_RETRIES)
+            if attempt < MAX_EMPTY_RETRIES:
+                logger.info("续写预算运行时在第 {} 轮自动重试...", round_index)
 
         if not round_text.strip():
-            logger.warning("续写预算运行时在第 {} 轮拿到空输出，提前结束。", round_index)
+            logger.warning("续写预算运行时在第 {} 轮重试 {} 次后仍为空，提前结束。",
+                           round_index, MAX_EMPTY_RETRIES)
             break
+
+        # 流式输出最终成功的 chunk
+        if getattr(request, "stream", False):
+            for chunk in _chunk_text(round_text):
+                yield chunk
+            if not round_text.endswith('\n'):
+                yield '\n'
 
         trim_result = trim_generated_text(round_text, round_plan)
         final_text = round_text if getattr(request, "stream", False) else trim_result.text
@@ -743,6 +852,8 @@ async def generate_continuation_streaming(
         if not getattr(request, "stream", False):
             for chunk in _chunk_text(final_text):
                 yield chunk
+            if not final_text.endswith('\n'):
+                yield '\n'
 
         target_word_count = getattr(request, "target_word_count", None)
         if trim_result.trimmed and not getattr(request, "stream", False):
@@ -934,14 +1045,14 @@ def _build_continuation_user_prompt(
         
         # 续写指令
         if getattr(request, 'append_continuous_novel_directive', True):
-            user_prompt_parts.append("【指令】请接着上述内容继续写作，保持文风和剧情连贯。直接输出小说正文。")
+            user_prompt_parts.append("【指令】请接着上述内容，按照后续【续写预算】中的节拍继续写作，你应该同时参考节拍动作和潜文本动作。保持文风和剧情连贯。直接输出小说正文。")
     else:
         # 新写模式或润色/扩写模式（previous_content为空）
         if getattr(request, 'append_continuous_novel_directive', True):
             if context_info and '【已有章节内容】' in context_info:
-                user_prompt_parts.append("【指令】请接着上述内容继续写作，保持文风和剧情连贯。直接输出小说正文。")
+                user_prompt_parts.append("【指令】请接着上述内容，按照后续【续写预算】中的节拍继续写作，你应该同时参考节拍动作和潜文本动作。保持文风和剧情连贯。直接输出小说正文。")
             else:
-                user_prompt_parts.append("【指令】请开始创作新章节。直接输出小说正文。")
+                user_prompt_parts.append("【指令】请按照后续【续写预算】中的节拍创作新章节，你应该同时参考节拍动作和潜文本动作。直接输出小说正文。")
 
     #追加对白质量提示
     dialogue_hint = build_dialogue_hint_text(round_plan)
@@ -981,10 +1092,12 @@ async def _stream_continuation_single_round(
     _max_tokens = round_plan.max_tokens
     if round_plan.mode != "prompt_only" and round_plan.hard_word_limit is not None:
         _max_tokens = int(round_plan.hard_word_limit * 2.4)
+    elif round_plan.hard_word_limit is None:
+        _max_tokens = 65536
     model = build_chat_model(
         session=session,
         llm_config_id=request.llm_config_id,
-        temperature=request.temperature or 0.7,
+        temperature=request.temperature or 1.3,
         max_tokens=_max_tokens,
         timeout=request.timeout or 64,
         thinking_enabled=True,
@@ -1046,29 +1159,51 @@ async def _stream_continuation_single_round(
 
             if stream_with_hard_limit:
                 pending_buffer += delta
-                # emitted_text, pending_buffer, reached_limit = _flush_streaming_buffer_with_limit(
-                #     already_emitted=accumulated,
-                #     pending_text=pending_buffer,
-                #     hard_limit=round_plan.hard_word_limit or 0,
-                # )
-                emitted_text, pending_buffer, _ = _flush_streaming_buffer_with_limit(
+                emitted_text, pending_buffer, reached_limit = _flush_streaming_buffer_with_limit(
                     already_emitted=accumulated,
                     pending_text=pending_buffer,
                     hard_limit=round_plan.hard_word_limit or 0,
                 )
-                reached_limit = False
+                # 手动关闭reached_limit
+                # emitted_text, pending_buffer, _ = _flush_streaming_buffer_with_limit(
+                #     already_emitted=accumulated,
+                #     pending_text=pending_buffer,
+                #     hard_limit=round_plan.hard_word_limit or 0,
+                # )
+                # reached_limit = False
+
                 print(f"[DEBUG yield硬截断] emitted_text={repr(emitted_text[:50]) if emitted_text else '空'}, accumulated_len={len(accumulated)}, hard_limit={round_plan.hard_word_limit}")
                 if emitted_text:
                     accumulated += emitted_text
                     yield emitted_text
-                # if reached_limit:
-                #     should_stop_current_round = True
-                #     break
+                if reached_limit:
+                    should_stop_current_round = True
+                    break
                 continue
 
-            accumulated += delta
-            print(f"[DEBUG yield] delta={repr(delta[:50]) if delta else '空'}, accumulated_len={len(accumulated)}")
-            yield delta
+            # 非硬截断模式也使用句子边界缓冲，只按句子边界flush，不截断
+            pending_buffer += delta
+            emitted_text, pending_buffer, _ = _flush_streaming_buffer_with_limit(
+                already_emitted=accumulated,
+                pending_text=pending_buffer,
+                hard_limit=100000,  # 足够大，只做句子边界缓冲
+                force_flush_tail=False,
+            )
+            if emitted_text:
+                accumulated += emitted_text
+                yield emitted_text
+
+        # 处理非硬截断模式的尾部buffer
+        if not stream_with_hard_limit and pending_buffer:
+            emitted_tail, pending_buffer, _ = _flush_streaming_buffer_with_limit(
+                already_emitted=accumulated,
+                pending_text=pending_buffer,
+                hard_limit=100000,
+                force_flush_tail=True,
+            )
+            if emitted_tail:
+                accumulated += emitted_tail
+                yield emitted_tail
 
         if stream_with_hard_limit and not should_stop_current_round and pending_buffer:
             # emitted_tail, pending_buffer, reached_limit = _flush_streaming_buffer_with_limit(

@@ -97,8 +97,8 @@ def build_round_plan(
         )
 
     rounds_left = max(1, max_rounds - round_index + 1)
-    effective_remaining = remaining_word_count if remaining_word_count > 0 else 280
-    close_mode = effective_remaining <= 0  # [MODIFIED] 只有剩余为0时才close，否则全部用advance均匀分配
+    effective_remaining = remaining_word_count if remaining_word_count > 0 else 800
+    close_mode = effective_remaining <= 0 
     print(f"[DEBUG build_round_plan] 多轮模式: rounds_left={rounds_left}, effective_remaining={effective_remaining}, close_mode={close_mode}")
 
     if close_mode:
@@ -109,13 +109,11 @@ def build_round_plan(
         is_final_round = rounds_left == 1
         print(f"[DEBUG build_round_plan] close_mode策略: suggested_word_count={suggested_word_count}, is_final_round={is_final_round}")
     else:
-        advance_rounds_left = rounds_left  # [MODIFIED] 均匀分配给所有轮次
-        suggested_word_count = _plan_advance_suggestion(
-            remaining_word_count=effective_remaining,
-            advance_rounds_left=advance_rounds_left,
-        )
-        is_final_round = (rounds_left == 1)  # [MODIFIED] 只有rounds_left=1才是最终轮
-        print(f"[DEBUG build_round_plan] advance_mode策略: advance_rounds_left={advance_rounds_left}, suggested_word_count={suggested_word_count}, is_final_round={is_final_round}")
+        # [修改] 直接使用均匀分配：每轮固定字数 = 剩余字数 / 剩余轮次
+        suggested_word_count = effective_remaining // rounds_left
+        # 若要保证至少分配1个词，可以取 max(1, ...)，但整除天然可以接受0
+        is_final_round = (rounds_left == 1)
+        print(f"[DEBUG build_round_plan] 均匀分配: effective_remaining={effective_remaining}, rounds_left={rounds_left}, suggested_word_count={suggested_word_count}, is_final_round={is_final_round}")
 
     max_tokens = _resolve_round_max_tokens(request.max_tokens, suggested_word_count, mode)
     print(f"[DEBUG build_round_plan] max_tokens计算: request.max_tokens={request.max_tokens}, suggested_word_count={suggested_word_count}, 结果={max_tokens}")
@@ -232,10 +230,11 @@ def build_budget_hint_text(
                     beat_main_perspective=pb.get("beat_main_perspective"),
                 )
 
-    lines: list[str] = ["【续写预算】", f"- 当前总字数：{plan.current_word_count} 字"]
+    lines: list[str] = ["【续写预算】"]
 
-    if plan.target_word_count is not None:
-        lines.append(f"- 目标总字数：{plan.target_word_count} 字")
+    # if plan.target_word_count is not None:
+        # lines.append(f"- 当前总字数：{plan.current_word_count} 字")
+        # lines.append(f"- 目标总字数：{plan.target_word_count} 字")
     # if plan.remaining_word_count is not None:
     #     lines.append(f"- 剩余字数：约 {max(plan.remaining_word_count, 0)} 字")
     if plan.mode != "prompt_only":
@@ -252,10 +251,10 @@ def build_budget_hint_text(
         else:
             lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍，本轮将处理本章第 {plan.round_index} 节拍(beat_id:{plan.round_index} )，并参考该节拍的动作和潜文本动作，以及本节拍是否本章的转折点。承接上一节拍的正文结尾确保转场自然、情绪连贯")
     if plan.suggested_word_count is not None and plan.mode != "prompt_only":
-        lines.append(f"- 本轮建议规模：约 {plan.suggested_word_count} 字")
+        lines.append(f"- 本轮建议字数约 {plan.suggested_word_count} 字")
         # lines.append(f"- 本轮建议规模：约 800 字")
-    if plan.hard_word_limit is not None:
-        lines.append(f"- 本轮硬上限：约 {plan.hard_word_limit} 字（超出会提前停轮）")
+    # if plan.hard_word_limit is not None:
+        # lines.append(f"- 本轮硬上限：约 {plan.hard_word_limit} 字（超出会提前停轮）")
         # lines.append(f"- 本轮硬上限：约 800 字（超出会提前停轮）")
 
     guidance = (continuation_guidance or "").strip()
@@ -323,9 +322,9 @@ def build_budget_hint_text(
         lines.append("")
         lines.append(f'1. **主视角锁定**：始终以{current_beat.beat_main_perspective}的第一人称进行内心独白，思考中用"我心想""我觉得""我注意到"等表达。**严禁切换到其他角色的第一人称视角**。你可以猜测他们的人物心理，但必须用"他可能……""她看起来……"这样的外部推测句式。')
         lines.append("")
-        lines.append('2. **格式要求**：内心独白用圆括号包裹，例如"（我心想：他的手指在桌下抖动，这很可疑。）"')
+        lines.append('2. **格式要求**：内心独白不得输出到正文部分。"')
         lines.append("")
-        lines.append(f"3. **内容要求**：思考必须保持{current_beat.beat_main_perspective}的职业特质——冷静、细致、多疑。分析应侧重于肢体语言、话语矛盾、逻辑漏洞。")
+        lines.append(f"3. **内容要求**：思考必须保持{current_beat.beat_main_perspective}的认知一致，不应该超出{current_beat.beat_main_perspective}的知识范围。")
         lines.append("")
         lines.append("4. **禁止事项**：不得在思考中出现任何其他角色的第一人称代入。")
 
@@ -399,7 +398,7 @@ def _resolve_round_hard_limit(
 ) -> Optional[int]:
     if suggested_word_count is None:
         return None
-    tolerance = 1.10
+    tolerance = 1.5
     return min(remaining_word_count, max(120, int(suggested_word_count * tolerance)))
 
 
@@ -431,10 +430,10 @@ def _clamp(value: int, minimum: int, maximum: int) -> int:
 
 
 def _estimate_round_count_from_remaining(mode: str, remaining_word_count: int) -> int:
-    if remaining_word_count <= 0:
+    if remaining_word_count <= 600:
         return 1
 
-    return 3 if remaining_word_count <= 1000 else 4
+    return  max(1, remaining_word_count // 600)
 
 
 def _estimate_round_cap(
@@ -445,22 +444,21 @@ def _estimate_round_cap(
     if mode == "prompt_only":
         return 1
 
-    target = target_word_count or current_word_count or 4000
+    target = (target_word_count if target_word_count is not None else 4800) 
+    return max(1, target // 600) 
 
-    return 3 if target <= 1000 else 4
 
-
-def _plan_advance_suggestion(
-    *,
-    remaining_word_count: int,
-    advance_rounds_left: int,
-) -> int:
-    # [MODIFIED] 均匀分配全部剩余字数，不再预留1000
-    advance_budget = remaining_word_count
-    suggestion = ceil(advance_budget / max(1, advance_rounds_left))
-    upper = 2200
-    lower = 220
-    return _clamp(suggestion, lower, upper)
+# def _plan_advance_suggestion(
+#     *,
+#     remaining_word_count: int,
+#     advance_rounds_left: int,
+# ) -> int:
+#     # [MODIFIED] 均匀分配全部剩余字数，不再预留1000
+#     advance_budget = remaining_word_count
+#     suggestion = ceil(advance_budget / max(1, advance_rounds_left))
+#     upper = 2200
+#     lower = 220
+#     return _clamp(suggestion, lower, upper)
 
 
 def _plan_close_suggestion(

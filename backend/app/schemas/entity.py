@@ -79,7 +79,7 @@ class Entity(BaseModel):
 
 class CharacterCardCore(Entity):
     last_appearance: Optional[Tuple[int, int]] = Field(default=None, description="最后出现时间：[卷号, 章节号]")
-    role_type: Literal["主角", "主角团配角", "普通NPC", "反派"] = Field("主角团配角", description="角色定位")
+    role_type: Literal["男主角", "女主角", "男副主角", "女副主角","主角团配角", "普通NPC", "反派"] = Field("主角团配角", description="角色定位")
     born_scene: str = Field(description="出场/常驻场景")
     description: str = Field(description="一句话简介与背景说明")
 

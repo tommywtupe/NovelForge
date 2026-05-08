@@ -316,6 +316,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/generate/line-by-line": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 逐行润色/审核接口
+         * @description 逐行润色/审核接口
+         *
+         *     支持流式响应，每行处理完成后立即返回。
+         */
+        post: operations["generate_line_by_line_api_ai_generate_line_by_line_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/assistant/chat": {
         parameters: {
             query?: never;
@@ -2664,6 +2686,11 @@ export interface components {
              */
             continuation_guidance?: string | null;
             /**
+             * Beat List Json
+             * @description 章节节拍列表的JSON字符串，前端从章纲卡beat_list解析后传入
+             */
+            beat_list_json?: string | null;
+            /**
              * Budget Round Hint
              * @description 预算运行时回灌的当前轮次提示
              */
@@ -2689,6 +2716,12 @@ export interface components {
              * @default true
              */
             append_continuous_novel_directive: boolean;
+            /**
+             * Enable Polish
+             * @description 启用后每轮生成完调用'内容生成单独润色'prompt二次润色
+             * @default false
+             */
+            enable_polish: boolean;
         };
         /** ContinuationResponse */
         ContinuationResponse: {
@@ -3599,6 +3632,57 @@ export interface components {
             /** User Agent */
             user_agent?: string | null;
         };
+        /**
+         * LineByLineMode
+         * @description 逐行润色/审核模式
+         */
+        LineByLineMode: {
+            /**
+             * Text
+             * @description 待处理原文
+             */
+            text: string;
+            /**
+             * Mode
+             * @description 处理模式：polish=润色, review=审核
+             * @enum {string}
+             */
+            mode: "polish" | "review";
+            /** Llm Config Id */
+            llm_config_id: number;
+            /**
+             * Context Info
+             * @description 上下文注入信息
+             */
+            context_info?: string | null;
+            /**
+             * Prompt Name
+             * @description 提示词名称：逐行润色 或 逐行审核
+             * @default 逐行润色
+             */
+            prompt_name: string;
+            /**
+             * Temperature
+             * @description 采样温度 0-2
+             */
+            temperature?: number | null;
+            /**
+             * Max Tokens
+             * @description 生成的最大token数
+             */
+            max_tokens?: number | null;
+            /**
+             * Timeout
+             * @description 生成超时(秒)
+             */
+            timeout?: number | null;
+            /**
+             * Stream
+             * @description 是否流式输出
+             * @default true
+             */
+            stream: boolean;
+        };
         /** MemoryExtractorInfo */
         MemoryExtractorInfo: {
             /** Code */
@@ -4153,6 +4237,11 @@ export interface components {
              * @description A 对 B 的总体立场（可选）
              */
             stance?: ("友好" | "中立" | "敌意") | null;
+            /**
+             * Volume Number
+             * @description 来源卷号
+             */
+            volume_number?: number | null;
             /**
              * Chapter
              * @description 来源章节号
@@ -5507,6 +5596,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["InstructionGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_line_by_line_api_ai_generate_line_by_line_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LineByLineMode"];
             };
         };
         responses: {

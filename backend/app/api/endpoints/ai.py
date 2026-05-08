@@ -394,7 +394,7 @@ async def generate_with_instruction_stream(
                 schema=full_schema,
                 card_prompt=card_prompt_content
             )
-            
+            logger.info(f"testing_logging-{request.prompt_template}:{system_prompt}")
             # 4. 调用指令流生成服务
             async for event in generate_instruction_stream(
                 session=session,

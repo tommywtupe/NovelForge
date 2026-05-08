@@ -252,16 +252,16 @@ def create_default_card_types(session: Session) -> None:
             "世界观设定: @世界观设定.content.world_view\n"
             "组织/势力设定:@type:组织卡[index=filter:content.name in $self.content.entity_list].{content.name,content.description,content.influence,content.relationship,content.dynamic_state}\n"
             "场景卡:@type:场景卡[index=filter:content.name in $self.content.entity_list].{content.name,content.description,content.dynamic_state}\n"
-            "当前故事阶段大纲: @parent.content.overview\n"
+            "当前故事阶段大纲（仅供方向指引，不得直接写入正文）: @parent.content.overview\n"
             "角色卡:@type:角色卡[index=filter:content.name in $self.content.entity_list].{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}\n"
             "物品卡:@type:物品卡[index=filter:content.name in $self.content.entity_list].{content.name,content.category,content.description,content.current_state,content.power_or_effect}\n"
             "概念卡:@type:概念卡[index=filter:content.name in $self.content.entity_list].{content.name,content.category,content.description,content.rule_definition,content.mastery_hint}\n"
-            "最近的章节原文，确保能够衔接剧情:@type:章节正文[previous:1].{content.title,content.chapter_number,content.content}\n"
             "参与者实体列表，确保生成内容只会出场这些实体:@self.content.entity_list\n"
-            "请根据 @self.content.chapter_number： @self.content.title 的大纲@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.overview,content.beat_list} 来创作章节正文内容。节拍列表说明：包含beat_id（序号）、beat_action（角色动作）、beat_subtext_action（动作潜文本）、turning_point（是否转折点）、beat_main_perspective（主视角人物）。请根据beat_main_perspective指示的主视角人物来切换叙事焦点。请按节拍顺序创作，可以适当发散、设计与大纲内容不冲突的剧情来进行扩充。你无需在正文中重复标题：@self.content.title \n"
-            "注意，写作时必须保证结尾剧情与下一章的剧情大纲不会冲突，且不会提前涉及下一章剧情(如果存在的话):@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{content.title,content.overview}\n"
+            "最近的章节原文，确保能够衔接剧情:@type:章节正文[previous:1].{content.title,content.chapter_number,content.content}\n"
+            "- 本章核心任务："
+            "请参考 @self.content.chapter_number： @self.content.title 的大纲（仅供方向指引，不得直接写入正文）@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{content.overview} 。你无需在正文中重复标题：@self.content.title \n"
+            "注意，写作时必须保证结尾剧情与下一章的剧情大纲不会冲突，且不会提前涉及下一章剧情(如果存在的话)（仅供方向指引，不得直接写入正文）:@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{content.title,content.overview}\n"
             "写作时请结合写作指南要求:@type:写作指南[index=filter:content.volume_number = $self.content.volume_number].{content.content}\n"
-            "请确保本次完成整个节拍的内容，且字数贴近限制要求。\n"
             ), "default_ai_context_template_review": chapter_review_context_template},
         "内容审核卡片": {
             "editor_component": "ReviewResultCardEditor",
@@ -303,23 +303,23 @@ def create_default_card_types(session: Session) -> None:
 
     # 类型默认 AI 参数预设（不包含 llm_config_id）
     DEFAULT_AI_PARAMS = {
-        "金手指": {"prompt_name": "金手指生成", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        "一句话梗概": {"prompt_name": "一句话梗概", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        "故事大纲": {"prompt_name": "一段话大纲", "temperature": 0.7, "max_tokens": 8192, "timeout": 120},
-        "世界观设定": {"prompt_name": "世界观设定", "temperature": 0.7, "max_tokens": 4096, "timeout": 150},
-        "核心蓝图": {"prompt_name": "核心蓝图", "temperature": 0.7, "max_tokens": 8192, "timeout": 150},
-        "分卷大纲": {"prompt_name": "分卷大纲", "temperature": 0.7, "max_tokens": 8192, "timeout": 150},
-        "写作指南": {"prompt_name": "写作指南", "temperature": 0.6, "max_tokens": 8192, "timeout": 120},
-        "阶段大纲": {"prompt_name": "阶段大纲", "temperature": 0.7, "max_tokens": 8192, "timeout": 120},
-        "章节大纲": {"prompt_name": "章节大纲", "temperature": 0.7, "max_tokens": 8192, "timeout": 120},
-        "章节正文": {"prompt_name": "内容生成", "temperature": 0.7, "max_tokens": 8192, "timeout": 120},
+        "金手指": {"prompt_name": "金手指生成", "temperature": 0.6, "max_tokens": 65536, "timeout": 300},
+        "一句话梗概": {"prompt_name": "一句话梗概", "temperature": 0.6, "max_tokens": 65536, "timeout": 300},
+        "故事大纲": {"prompt_name": "一段话大纲", "temperature": 0.7, "max_tokens": 65536, "timeout": 300},
+        "世界观设定": {"prompt_name": "世界观设定", "temperature": 0.7, "max_tokens": 65536, "timeout": 300},
+        "核心蓝图": {"prompt_name": "核心蓝图", "temperature": 0.7, "max_tokens": 65536, "timeout": 300},
+        "分卷大纲": {"prompt_name": "分卷大纲", "temperature": 0.7, "max_tokens": 65536, "timeout": 300},
+        "写作指南": {"prompt_name": "写作指南", "temperature": 0.6, "max_tokens": 65536, "timeout": 300},
+        "阶段大纲": {"prompt_name": "阶段大纲", "temperature": 0.7, "max_tokens": 65536, "timeout": 300},
+        "章节大纲": {"prompt_name": "章节大纲", "temperature": 0.7, "max_tokens": 65536, "timeout": 300},
+        "章节正文": {"prompt_name": "内容生成", "temperature": 0.7, "max_tokens": 65536, "timeout": 300},
         "内容审核卡片": None,
-        "角色卡": {"prompt_name": "角色动态信息提取", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        "场景卡": {"prompt_name": "内容生成", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        "组织卡": {"prompt_name": "关系提取", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
+        "角色卡": {"prompt_name": "角色动态信息提取", "temperature": 0.6, "max_tokens": 65536, "timeout": 300},
+        "场景卡": {"prompt_name": "内容生成", "temperature": 0.6, "max_tokens": 65536, "timeout": 300},
+        "组织卡": {"prompt_name": "关系提取", "temperature": 0.6, "max_tokens": 65536, "timeout": 300},
         "物品卡": None,
         "概念卡": None,
-        "正文翻译卡": {"prompt_name": "正文翻译", "temperature": 0.3, "max_tokens": 8192, "timeout": 120},
+        "正文翻译卡": {"prompt_name": "正文翻译", "temperature": 0.3, "max_tokens": 65536, "timeout": 300},
         "翻译术语表": None,
     }
 
