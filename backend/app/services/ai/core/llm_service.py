@@ -17,6 +17,7 @@ from app.services.ai.generation.continuation_budget_runtime import (
     count_text_units,
     estimate_required_call_count,
     normalize_word_control_mode,
+    resolve_beat_list,
     trim_generated_text,
 )
 from app.services.ai.generation.structured_runtime import (
@@ -357,6 +358,111 @@ async def generate_continuation_streaming(
             break
 
 
+def _extract_json_array_after_marker(text: str, marker: str) -> list[dict[str, Any]]:
+    if not text or marker not in text:
+        return []
+
+    tail = text.split(marker, 1)[1].lstrip()
+    if not tail.startswith("["):
+        return []
+
+    depth = 0
+    end_index = -1
+    for index, char in enumerate(tail):
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                end_index = index + 1
+                break
+
+    if end_index <= 0:
+        return []
+
+    try:
+        payload = json.loads(tail[:end_index])
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def _format_character_profile(payload: dict[str, Any]) -> str:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return ""
+
+    segments: list[str] = [f"你是{name}。"]
+
+    identity_parts: list[str] = []
+    for label, key in (
+        ("角色定位", "role_type"),
+        ("一句话背景", "description"),
+        ("出场场景", "born_scene"),
+        ("性格", "personality"),
+        ("核心驱动力", "core_drive"),
+        ("角色弧光", "character_arc"),
+    ):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            identity_parts.append(f"{label}：{value}")
+    if identity_parts:
+        segments.append("基础身份：" + "；".join(identity_parts))
+
+    appearance_parts: list[str] = []
+    for label, key in (
+        ("体态", "physique"),
+        ("气质", "aura"),
+        ("相貌", "appearance"),
+        ("衣着", "dressing"),
+    ):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            appearance_parts.append(f"{label}：{value}")
+    if appearance_parts:
+        segments.append("外在形象：" + "；".join(appearance_parts))
+
+    inner_parts: list[str] = []
+    for label, key in (
+        ("核心渴望", "core_desire"),
+        ("核心恐惧", "core_fear"),
+        ("防御机制", "defense_mechanism"),
+        ("心理创伤", "psychological_trauma"),
+        ("公共面具", "public_persona"),
+        ("私人面具", "private_persona"),
+        ("真实面目", "the_shadow_self"),
+    ):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            inner_parts.append(f"{label}：{value}")
+    if inner_parts:
+        segments.append("内在心理：" + "；".join(inner_parts))
+
+    return "\n".join(segments).strip()
+
+
+def _extract_character_context(context_info: str | None) -> dict[str, str]:
+    context = (context_info or "").strip()
+    if not context:
+        return {}
+
+    candidates: list[dict[str, Any]] = []
+    for marker in ("角色卡:", "角色卡信息:"):
+        candidates.extend(_extract_json_array_after_marker(context, marker))
+
+    result: dict[str, str] = {}
+    for item in candidates:
+        name = str(item.get("name") or "").strip()
+        if not name or name in result:
+            continue
+        profile = _format_character_profile(item)
+        if profile:
+            result[name] = profile
+    return result
+
+
 def _build_continuation_user_prompt(
     request: ContinuationRequest,
     round_plan,
@@ -387,18 +493,31 @@ def _build_continuation_user_prompt(
         
         # 续写指令
         if getattr(request, 'append_continuous_novel_directive', True):
-            user_prompt_parts.append("【指令】请接着上述内容继续写作，保持文风和剧情连贯。直接输出小说正文。")
+            if resolve_beat_list(request):
+                user_prompt_parts.append("【指令】请接着上述内容继续写作，严格遵守当前节拍，保持文风和剧情连贯。直接输出小说正文。")
+            else:
+                user_prompt_parts.append("【指令】请接着上述内容继续写作，保持文风和剧情连贯。直接输出小说正文。")
     else:
         # 新写模式或润色/扩写模式（previous_content为空）
         if getattr(request, 'append_continuous_novel_directive', True):
             if context_info and '【已有章节内容】' in context_info:
-                user_prompt_parts.append("【指令】请接着上述内容继续写作，保持文风和剧情连贯。直接输出小说正文。")
+                if resolve_beat_list(request):
+                    user_prompt_parts.append("【指令】请接着上述内容继续写作，严格遵守当前节拍，保持文风和剧情连贯。直接输出小说正文。")
+                else:
+                    user_prompt_parts.append("【指令】请接着上述内容继续写作，保持文风和剧情连贯。直接输出小说正文。")
             else:
-                user_prompt_parts.append("【指令】请开始创作新章节。直接输出小说正文。")
+                if resolve_beat_list(request):
+                    user_prompt_parts.append("【指令】请开始创作新章节，并严格遵守当前节拍与主视角限制。直接输出小说正文。")
+                else:
+                    user_prompt_parts.append("【指令】请开始创作新章节。直接输出小说正文。")
 
+    beat_list = resolve_beat_list(request)
+    character_context = _extract_character_context(context_info) if beat_list else None
     budget_hint = build_budget_hint_text(
         round_plan,
         getattr(request, "continuation_guidance", None),
+        beat_list=beat_list,
+        character_context=character_context,
         include_outline_boundary=getattr(request, "append_continuous_novel_directive", True),
     )
     if budget_hint:

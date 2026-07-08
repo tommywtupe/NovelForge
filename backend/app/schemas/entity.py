@@ -32,6 +32,7 @@ EntityType = Literal["character", "scene", "organization", "item", "concept"]
 class DynamicInfoItem(BaseModel):
     id: int = Field(-1, description="手动设置，无需生成；并入时若为 -1 将自动分配顺序号")
     info: str = Field(description="简要描述具体动态信息")
+    chapter: int = Field(default=0, description="来源章节号，0 表示未知章节")
 
 
 class DynamicInfo(BaseModel):
@@ -78,7 +79,16 @@ class Entity(BaseModel):
 
 class CharacterCardCore(Entity):
     last_appearance: Optional[Tuple[int, int]] = Field(default=None, description="最后出现时间：[卷号, 章节号]")
-    role_type: Literal["主角", "主角团配角", "普通NPC", "反派"] = Field("主角团配角", description="角色定位")
+    role_type: Literal[
+        "主角",
+        "男主角",
+        "女主角",
+        "男副主角",
+        "女副主角",
+        "主角团配角",
+        "普通NPC",
+        "反派",
+    ] = Field("主角团配角", description="角色定位")
     born_scene: str = Field(description="出场/常驻场景")
     description: str = Field(description="一句话简介与背景说明")
 
@@ -86,6 +96,17 @@ class CharacterCardCore(Entity):
 class CharacterCard(CharacterCardCore):
     entity_type: EntityType = Field("character", description="实体类型标记")
     personality: str = Field(description="性格关键词")
+    physique: str = Field(default="", description="体态（身材比例、体格、姿态）")
+    aura: str = Field(default="", description="气质（气场、神韵、给人的氛围感）")
+    appearance: str = Field(default="", description="相貌（五官特征、面部细节）")
+    dressing: str = Field(default="", description="衣着（穿搭风格、服装材质与配饰）")
+    core_desire: str = Field(default="", description="核心渴望（角色最深处的欲望）")
+    core_fear: str = Field(default="", description="核心恐惧（与渴望形成张力的人格阴影）")
+    defense_mechanism: str = Field(default="", description="防御机制（角色如何保护自己）")
+    psychological_trauma: str = Field(default="", description="心理创伤（造成核心恐惧的根源经历）")
+    public_persona: str = Field(default="", description="公共面具（社交场合下展示的社会身份）")
+    private_persona: str = Field(default="", description="私人面具（仅亲密之人可见的脆弱面）")
+    the_shadow_self: str = Field(default="", description="真实面目（角色不愿承认的深层自我）")
     core_drive: str = Field(description="核心驱动力/目标")
     character_arc: str = Field(description="角色在全书中的弧光")
     dynamic_info: Dict[DynamicInfoType, List[DynamicInfoItem]] = Field(
@@ -162,3 +183,54 @@ class ConceptCard(Entity):
     counter_relations: List[str] = Field(default_factory=list, description="对立、克制或限制关系")
     mastery_hint: Optional[str] = Field(default=None, description="掌握门槛、领悟方式或常见使用者")
     known_by: List[str] = Field(default_factory=list, description="已知掌握、知晓或受影响的实体")
+
+
+class GlossaryTerm(BaseModel):
+    source: str = Field(description="原文")
+    translated: str = Field(description="翻译")
+    category: Literal["character", "scene", "organization", "item", "concept", "other"] = Field(
+        default="other",
+        description="术语来源类别",
+    )
+    source_card_id: Optional[int] = Field(default=None, description="来源卡片 ID")
+    notes: Optional[str] = Field(default=None, description="备注说明")
+
+
+class TranslationGlossary(BaseModel):
+    name: str = Field(description="术语表名称")
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(description="目标语言")
+    terms: List[GlossaryTerm] = Field(default_factory=list, description="术语列表")
+    updated_at: Optional[str] = Field(default=None, description="最后更新时间")
+
+
+class GlossaryTermExtractionRequest(BaseModel):
+    project_id: int = Field(description="项目 ID")
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(description="目标语言")
+    glossary_card_id: Optional[int] = Field(default=None, description="现有术语表卡片 ID")
+    llm_config_id: Optional[int] = Field(default=None, description="LLM 配置 ID")
+    update_mode: Literal[
+        "scan_new_concepts",
+        "translate_new_concepts",
+        "full_rebuild_translations",
+        "scan_and_translate",
+    ] = Field(default="scan_and_translate", description="更新模式")
+
+
+class GlossaryTermExtractionResponse(BaseModel):
+    terms: List[GlossaryTerm] = Field(description="提取的术语列表")
+    new_terms_count: int = Field(description="新增术语数量")
+    updated_terms_count: int = Field(description="更新术语数量")
+    removed_terms_count: int = Field(description="删除术语数量")
+    glossary_card_id: int = Field(description="术语表卡片 ID")
+
+
+class TranslateTermsRequest(BaseModel):
+    terms: List[str] = Field(description="待翻译术语列表")
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(description="目标语言")
+    llm_config_id: int = Field(description="LLM 配置 ID")
+    glossary_card_id: int = Field(description="术语表卡片 ID")
+    project_id: int = Field(description="项目 ID")
+
+
+class TranslateTermsResponse(BaseModel):
+    translations: List[dict] = Field(description="翻译结果列表")

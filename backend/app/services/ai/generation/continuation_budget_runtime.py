@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from math import ceil
 from typing import Optional
 
@@ -31,6 +32,15 @@ class ContinuationRoundPlan:
 
 
 @dataclass(frozen=True)
+class BeatInfo:
+    beat_id: int
+    beat_action: str
+    beat_subtext_action: Optional[str] = None
+    turning_point: bool = False
+    beat_main_perspective: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class ContinuationTrimResult:
     text: str
     trimmed: bool
@@ -57,6 +67,10 @@ def estimate_required_call_count(request: ContinuationRequest) -> int:
     if mode == "prompt_only":
         return 1
 
+    beat_list = resolve_beat_list(request)
+    if beat_list:
+        return len(beat_list)
+
     current_word_count = _resolve_current_word_count(request)
     remaining_word_count = _resolve_remaining_word_count(request, current_word_count)
     return _estimate_round_count_from_remaining(mode, remaining_word_count)
@@ -70,7 +84,8 @@ def build_round_plan(
     mode = normalize_word_control_mode(request)
     target_word_count = getattr(request, "target_word_count", None)
     remaining_word_count = _resolve_remaining_word_count(request, current_word_count)
-    max_rounds = _estimate_round_cap(mode, target_word_count, current_word_count)
+    beat_list = resolve_beat_list(request)
+    max_rounds = len(beat_list) if beat_list else _estimate_round_cap(mode, target_word_count, current_word_count)
 
     if mode == "prompt_only":
         return ContinuationRoundPlan(
@@ -132,6 +147,8 @@ def build_budget_hint_text(
     plan: ContinuationRoundPlan,
     continuation_guidance: str | None = None,
     *,
+    beat_list: list[BeatInfo] | None = None,
+    character_context: dict[str, str] | None = None,
     include_outline_boundary: bool = True,
 ) -> str:
     lines: list[str] = ["【续写预算】", f"- 当前总字数：{plan.current_word_count} 字"]
@@ -159,6 +176,28 @@ def build_budget_hint_text(
     else:
         lines.append("- 当前为智能字数控制模式：前两轮优先推进剧情，后续逐步收束字数并完成结尾。")
 
+    current_beat = _get_round_beat(plan.round_index, beat_list)
+    previous_beat = _get_round_beat(plan.round_index - 1, beat_list)
+
+    if current_beat:
+        lines.append("")
+        lines.append("【当前节拍】")
+        lines.append(f"- 当前节拍：第 {plan.round_index} 节拍 / 共 {plan.max_rounds} 节拍")
+        lines.append(f"- 节拍动作：{current_beat.beat_action}")
+        if current_beat.beat_subtext_action:
+            lines.append(f"- 潜文本动作：{current_beat.beat_subtext_action}")
+        if current_beat.turning_point:
+            lines.append("- 本节拍是本章关键转折点，必须充分展开并自然收束。")
+        if current_beat.beat_main_perspective:
+            lines.append(f"- 本节拍主视角：{current_beat.beat_main_perspective}")
+
+    if previous_beat:
+        lines.append("")
+        lines.append("【上一节拍承接】")
+        lines.append(f"- 上一节拍动作：{previous_beat.beat_action}")
+        if previous_beat.beat_subtext_action:
+            lines.append(f"- 上一节拍潜文本：{previous_beat.beat_subtext_action}")
+
     if include_outline_boundary:
         lines.append(_OUTLINE_BOUNDARY_HINT)
 
@@ -170,6 +209,25 @@ def build_budget_hint_text(
 
     if plan.mode != "prompt_only" and plan.is_final_round:
         lines.append("- 这是最后一轮：请只做结尾收束，严控字数，不要开启新支线，不要明显超出预算；结尾要自然，并保留余味或轻微悬念。")
+
+    if current_beat:
+        lines.append("")
+        lines.append("【节拍写作协议】")
+        lines.append("1. 严格只写当前节拍，不得越入下一节拍。")
+        lines.append("2. 节拍完成后输出 <节拍完成> 作为结束信号。")
+        lines.append("3. 若本节拍尚未完成，即使接近字数上限也要先保证动作链闭合。")
+
+        if current_beat.beat_main_perspective:
+            lines.append("")
+            lines.append("【主视角锁定】")
+            lines.append(f"- 所有心理描写与认知判断必须锁定在 {current_beat.beat_main_perspective}。")
+            lines.append(f"- 其他角色只能通过 {current_beat.beat_main_perspective} 的观察、推断或对话呈现。")
+
+            character_profile = (character_context or {}).get(current_beat.beat_main_perspective, "").strip()
+            if character_profile:
+                lines.append("")
+                lines.append("【角色身份】")
+                lines.append(character_profile)
 
     return "\n".join(lines).strip()
 
@@ -216,6 +274,48 @@ def _resolve_remaining_word_count(request: ContinuationRequest, current_word_cou
     if target_word_count is None:
         return 0
     return max(target_word_count - current_word_count, 0)
+
+
+def parse_beat_list_json(raw: str | None) -> list[BeatInfo]:
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    beat_list: list[BeatInfo] = []
+    for index, item in enumerate(payload, start=1):
+        if not isinstance(item, dict):
+            continue
+        beat_action = str(item.get("beat_action") or "").strip()
+        if not beat_action:
+            continue
+        beat_list.append(
+            BeatInfo(
+                beat_id=int(item.get("beat_id") or index),
+                beat_action=beat_action,
+                beat_subtext_action=str(item.get("beat_subtext_action") or "").strip() or None,
+                turning_point=bool(item.get("turning_point")),
+                beat_main_perspective=str(item.get("beat_main_perspective") or "").strip() or None,
+            )
+        )
+    return beat_list
+
+
+def resolve_beat_list(request: ContinuationRequest) -> list[BeatInfo]:
+    return parse_beat_list_json(getattr(request, "beat_list_json", None))
+
+
+def _get_round_beat(round_index: int, beat_list: list[BeatInfo] | None) -> BeatInfo | None:
+    if not beat_list or round_index <= 0:
+        return None
+    index = round_index - 1
+    if index >= len(beat_list):
+        return None
+    return beat_list[index]
 
 
 def _resolve_round_max_tokens(

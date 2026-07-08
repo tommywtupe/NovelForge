@@ -149,6 +149,17 @@ class ReviewResultCardContent(BaseModel):
     target_snapshot: Optional[str] = Field(default=None, description="被审核内容快照")
     meta: Optional[dict[str, Any]] = Field(default_factory=dict, description="扩展元数据")
 
+
+class BeatItem(BaseModel):
+    """章节节拍信息。"""
+
+    beat_id: int = Field(description="节拍序号，从 1 开始")
+    beat_action: str = Field(description="该节拍发生的外部动作")
+    beat_subtext_action: Optional[str] = Field(default=None, description="该节拍的潜文本动作或隐含推进")
+    turning_point: bool = Field(default=False, description="是否为本章转折点")
+    beat_main_perspective: Optional[str] = Field(default=None, description="该节拍的主视角人物")
+
+
 class ChapterOutline(BaseModel):
     """章节大纲"""
     volume_number: int = Field(description="卷号，如果没有找到，则设置为0")
@@ -160,6 +171,11 @@ class ChapterOutline(BaseModel):
     entity_list: List[str] = Field(
         description="章节中出场的重要实体列表，只能从上下文提供的组织/角色/场景卡实体中选择，不得新增、自创；实体名称必须是纯名称（不得包含括号/备注）。注意,为了精简上下文，避免实体列表中出现该章节未出场的冗余实体",
     )
+    beat_list: List[BeatItem] = Field(
+        default_factory=list,
+        description="章节节拍列表，用于控制本章续写时的叙事节奏与视角推进",
+    )
+    beat_main_perspective: Optional[str] = Field(default=None, description="本章默认主视角人物，可被节拍级视角覆盖")
 
     
 
@@ -204,5 +220,13 @@ class Chapter(BaseModel):
         description="章节中参与的重要实体列表，只能从提供的实体中选择；name 必须是纯名称（不得包含括号/备注）",
     )
     content:Optional[str]=Field(default="",description="章节正文内容")
-    
 
+
+class TranslationChapter(BaseModel):
+    volume_number: int = Field(description="卷号，如果没有找到，则设置为0")
+    stage_number: int = Field(description="该章节属于第几个阶段，从1开始")
+    title: str = Field(description="翻译后的章节标题")
+    chapter_number: int = Field(description="章节序号")
+    target_language: Literal["繁體中文", "日文", "英文", "韓文"] = Field(description="目标翻译语言")
+    entity_list: List[str] = Field(description="章节中参与的重要实体列表，翻译时保持原文")
+    content: Optional[str] = Field(default="", description="翻译后的章节正文内容")

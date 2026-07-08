@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 from typing import List, Dict, Any
@@ -39,6 +41,46 @@ def _resolve_card_type_name(db: Session, card: Card) -> str | None:
     if db_card_type and getattr(db_card_type, "name", None):
         return str(db_card_type.name)
     return None
+
+
+_STORYAXIS_COMPLETION_MARKER = "<节拍完成>"
+_STORYAXIS_SELF_REVIEW_MARKER = "===自查结果==="
+
+
+def _sanitize_storyaxis_chapter_text(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+
+    cleaned = text.replace(_STORYAXIS_COMPLETION_MARKER, "")
+    lines = cleaned.splitlines()
+    output_lines: list[str] = []
+    skipping_self_review = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == _STORYAXIS_SELF_REVIEW_MARKER:
+            skipping_self_review = True
+            continue
+
+        if skipping_self_review:
+            if not stripped or stripped.startswith(("-", "*", "+")) or re.match(r"^\d+[.)]\s", stripped):
+                continue
+            skipping_self_review = False
+
+        output_lines.append(line)
+
+    return "\n".join(output_lines).strip()
+
+
+def _sanitize_storyaxis_chapter_content(content: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(content, dict):
+        return content
+
+    sanitized = dict(content)
+    body = sanitized.get("content")
+    if isinstance(body, str):
+        sanitized["content"] = _sanitize_storyaxis_chapter_text(body)
+    return sanitized
 
 # --- CardType Endpoints ---
 # 说明：CardTypeRead 需包含 default_ai_context_template 字段（由 Pydantic schema 定义控制）。
@@ -204,6 +246,11 @@ def update_card(card_id: int, card: CardUpdate, db: Session = Depends(get_sessio
         old_content = copy.deepcopy(old_card.content)
 
     was_needs_confirmation = getattr(old_card, 'needs_confirmation', False) if old_card else False
+
+    if old_card and card.content is not None:
+        card_type_name = _resolve_card_type_name(db, old_card) or ""
+        if card_type_name.endswith("章节正文"):
+            card.content = _sanitize_storyaxis_chapter_content(card.content)
     
     service = CardService(db)
     db_card = service.update(card_id, card)

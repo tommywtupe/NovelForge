@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List, Literal
 
+from app.schemas.entity import TranslationGlossary
+
 
 ContinuationWordControlMode = Literal["prompt_only", "balanced"]
 
@@ -27,6 +29,7 @@ class ContinuationRequest(BaseModel):
         description="字数控制模式：prompt_only / balanced",
     )
     continuation_guidance: Optional[str] = Field(default=None, description="续写指导要求")
+    beat_list_json: Optional[str] = Field(default=None, description="章节节拍列表的 JSON 字符串")
     budget_round_hint: Optional[int] = Field(default=None, description="预算运行时回灌的当前轮次提示")
     remaining_word_count_hint: Optional[int] = Field(default=None, description="预算运行时回灌的剩余字数提示")
     is_final_round_hint: Optional[bool] = Field(default=None, description="预算运行时回灌的最后一轮标记")
@@ -79,3 +82,16 @@ class GeneralAIRequest(BaseModel):
 
     class Config:
         extra = 'ignore'
+
+
+class BuildTranslationContextRequest(BaseModel):
+    card_id: int = Field(description="翻译卡片 ID")
+    context_kind: str = Field(default="generation", description="上下文类型：generation 或 review")
+    glossary: Optional[TranslationGlossary] = Field(default=None, description="术语表内容")
+    ui_language: str = Field(default="繁體中文", description="UI 语言")
+    project_id: Optional[int] = Field(default=None, description="项目 ID")
+
+
+class BuildTranslationContextResponse(BaseModel):
+    context_info: str = Field(description="完整的上下文信息")
+    source_text: str = Field(description="提取的原文正文")
