@@ -30,7 +30,12 @@ export async function deleteKnowledge(id: number): Promise<{ message: string }> 
 export type LLMConfigRead = components['schemas']['LLMConfigRead']
 export type LLMConfigCreate = components['schemas']['LLMConfigCreate']
 export type LLMConfigUpdate = components['schemas']['LLMConfigUpdate']
-export type LLMConnectionTest = components['schemas']['LLMConnectionTest']
+export type LLMReasoningEffort = 'low' | 'medium' | 'high' | 'max'
+export type LLMConnectionTest = components['schemas']['LLMConnectionTest'] & {
+  thinking?: boolean | null
+  thinking_enabled?: boolean | null
+  reasoning_effort?: LLMReasoningEffort | null
+}
 
 export interface LLMGetModelsRequest {
   provider: string

@@ -9,6 +9,7 @@
       <el-select v-model="form.provider" placeholder="请选择提供商">
         <el-option label="OpenAI兼容" value="openai_compatible" />
         <el-option label="OpenAI" value="openai" />
+        <el-option label="DeepSeek" value="deepseek" />
         <el-option label="Google" value="google" />
         <el-option label="Anthropic" value="anthropic" />
       </el-select>
@@ -123,6 +124,28 @@
       <span style="margin-left: 8px; color: #888">-1 表示不限</span>
     </el-form-item>
 
+    <el-form-item v-if="isOpenAIProvider" label="推理配置">
+      <div class="reasoning-settings">
+        <el-switch
+          v-model="form.thinking"
+          inline-prompt
+          active-text="Thinking"
+          inactive-text="Thinking"
+        />
+        <el-select
+          v-model="form.reasoning_effort"
+          :disabled="!form.thinking"
+          placeholder="推理强度"
+          style="width: 140px"
+        >
+          <el-option label="低" value="low" />
+          <el-option label="中" value="medium" />
+          <el-option label="高" value="high" />
+          <el-option label="最高" value="max" />
+        </el-select>
+      </div>
+    </el-form-item>
+
     <el-form-item label="模型能力">
       <div class="capability-panel">
         <div class="capability-actions">
@@ -191,6 +214,19 @@ import type { LLMCapabilityTestResult } from '@renderer/api/setting'
 type LLMConfig = components['schemas']['LLMConfigRead']
 type LLMApiProtocol = 'chat_completions' | 'responses'
 type LLMAssistantMode = 'auto' | 'standard' | 'react' | 'plain'
+type LLMReasoningEffort = 'low' | 'medium' | 'high' | 'max'
+type LLMConfigFormRead = LLMConfig & {
+  custom_request_path?: string | null
+  models_path?: string | null
+  user_agent?: string | null
+  capability_summary?: LLMCapabilityTestResult | null
+  recommended_assistant_mode?: LLMAssistantMode | null
+  disable_stream?: boolean | null
+  capability_last_checked_at?: string | null
+  thinking?: boolean | null
+  thinking_enabled?: boolean | null
+  reasoning_effort?: LLMReasoningEffort | null
+}
 
 const props = defineProps<{
   initialData?: LLMConfig | null
@@ -217,15 +253,17 @@ const form = reactive({
   custom_request_path: '',
   models_path: '',
   user_agent: '',
-  capability_summary: null as any,
+  capability_summary: null as LLMCapabilityTestResult | null,
   recommended_assistant_mode: 'auto' as LLMAssistantMode,
   disable_stream: false,
   capability_last_checked_at: null as string | null,
+  thinking: false,
+  reasoning_effort: 'medium' as LLMReasoningEffort,
   token_limit: -1,
   call_limit: -1,
 })
 
-const isOpenAIProvider = computed(() => form.provider === 'openai' || form.provider === 'openai_compatible')
+const isOpenAIProvider = computed(() => ['openai', 'openai_compatible', 'deepseek'].includes(form.provider))
 const overallAlertType = computed(() => {
   const overall = capabilityResult.value?.overall
   if (overall === 'full' || overall === 'react_assistant' || overall === 'writing_review_only') return 'success'
@@ -281,7 +319,7 @@ const rules = reactive<FormRules>({
 watch(
   () => form.provider,
   (provider) => {
-    if (!['openai', 'openai_compatible'].includes(provider)) {
+    if (!['openai', 'openai_compatible', 'deepseek'].includes(provider)) {
       form.api_protocol = 'chat_completions'
       form.custom_request_path = ''
       form.models_path = ''
@@ -296,23 +334,30 @@ watch(
   () => props.initialData,
   (newData) => {
     if (newData) {
-      form.id = newData.id
-      form.provider = newData.provider
-      form.display_name = newData.display_name || ''
-      form.model_name = newData.model_name
-      form.api_base = newData.api_base || ''
-      form.api_key = newData.api_key || ''
-      form.api_protocol = (((newData as any).api_protocol || 'chat_completions') === 'responses' ? 'responses' : 'chat_completions') as LLMApiProtocol
-      form.custom_request_path = (newData as any).custom_request_path || ''
-      form.models_path = (newData as any).models_path || ''
-      form.user_agent = (newData as any).user_agent || ''
-      form.capability_summary = (newData as any).capability_summary || null
-      form.recommended_assistant_mode = ((newData as any).recommended_assistant_mode || 'auto') as LLMAssistantMode
-      form.disable_stream = !!(newData as any).disable_stream
-      form.capability_last_checked_at = (newData as any).capability_last_checked_at || null
+      const data = newData as LLMConfigFormRead
+      form.id = data.id
+      form.provider = data.provider
+      form.display_name = data.display_name || ''
+      form.model_name = data.model_name
+      form.api_base = data.api_base || ''
+      form.api_key = data.api_key || ''
+      form.api_protocol = (data.api_protocol || 'chat_completions') === 'responses' ? 'responses' : 'chat_completions'
+      form.custom_request_path = data.custom_request_path || ''
+      form.models_path = data.models_path || ''
+      form.user_agent = data.user_agent || ''
+      form.capability_summary = data.capability_summary || null
+      form.recommended_assistant_mode = data.recommended_assistant_mode || 'auto'
+      form.disable_stream = !!data.disable_stream
+      form.capability_last_checked_at = data.capability_last_checked_at || null
+      form.thinking = Boolean(data.thinking ?? data.thinking_enabled ?? false)
+      form.reasoning_effort = data.reasoning_effort === 'low'
+        || data.reasoning_effort === 'high'
+        || data.reasoning_effort === 'max'
+        ? data.reasoning_effort
+        : 'medium'
       capabilityResult.value = form.capability_summary as LLMCapabilityTestResult | null
-      form.token_limit = (newData as any).token_limit ?? -1
-      form.call_limit = (newData as any).call_limit ?? -1
+      form.token_limit = data.token_limit ?? -1
+      form.call_limit = data.call_limit ?? -1
       showAdvancedTransport.value = form.api_protocol !== 'chat_completions' || !!form.custom_request_path || !!form.models_path || !!form.user_agent
       showRareTransportFields.value = !!form.custom_request_path || !!form.models_path || !!form.user_agent
       return
@@ -332,6 +377,8 @@ watch(
     form.recommended_assistant_mode = 'auto'
     form.disable_stream = false
     form.capability_last_checked_at = null
+    form.thinking = false
+    form.reasoning_effort = 'medium'
     capabilityResult.value = null
     form.token_limit = -1
     form.call_limit = -1
@@ -350,6 +397,21 @@ function buildTransportPayload() {
   }
 }
 
+function buildReasoningConfigPayload() {
+  return {
+    thinking: form.thinking,
+    thinking_enabled: form.thinking,
+    reasoning_effort: form.reasoning_effort,
+  }
+}
+
+function buildReasoningRequestPayload() {
+  return {
+    thinking: form.thinking,
+    reasoning_effort: form.reasoning_effort,
+  }
+}
+
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) {
@@ -365,6 +427,7 @@ async function handleSubmit() {
     recommended_assistant_mode: form.recommended_assistant_mode,
     disable_stream: form.disable_stream,
     capability_last_checked_at: form.capability_last_checked_at || undefined,
+    ...buildReasoningConfigPayload(),
   })
 }
 
@@ -408,7 +471,8 @@ async function handleTest() {
       api_base: form.api_base.trim() || undefined,
       api_key: form.api_key,
       ...buildTransportPayload(),
-    } as any)
+      ...buildReasoningRequestPayload(),
+    })
     ElMessage.success('连接成功')
   } catch (e: any) {
     ElMessage.error(`连接失败：${e?.message || e}`)
@@ -430,11 +494,12 @@ async function handleCapabilityTest(tryRepair: boolean) {
       api_base: form.api_base.trim() || undefined,
       api_key: form.api_key,
       ...buildTransportPayload(),
+      ...buildReasoningRequestPayload(),
       test_models_list: true,
       try_repair: tryRepair,
       save_result: tryRepair && !!form.id,
       config_id: form.id,
-    } as any)
+    })
     capabilityResult.value = result
     const repairedWithUserAgent = !!result.recommended_mode.use_default_user_agent && !!result.recommended_mode.recommended_user_agent
     if (tryRepair && result.tests.basic_chat.status === 'pass' && repairedWithUserAgent) {
@@ -480,6 +545,7 @@ function applyCapabilityRecommendationToForm() {
     tags: capabilityResult.value.tags,
     summary: capabilityResult.value.summary,
     recommended_mode: mode,
+    raw_errors: capabilityResult.value.raw_errors,
     repair_notes: capabilityResult.value.repair_notes,
   }
   form.capability_last_checked_at = new Date().toISOString()
@@ -595,6 +661,14 @@ function overallText(overall: string) {
 
 .inline-item :deep(.el-select),
 .inline-item :deep(.el-input) {
+  width: 100%;
+}
+
+.reasoning-settings {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   width: 100%;
 }
 

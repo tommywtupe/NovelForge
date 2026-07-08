@@ -115,11 +115,32 @@ def _normalize_capability_fields(db_config: LLMConfig) -> None:
     db_config.disable_stream = bool(getattr(db_config, "disable_stream", False))
 
 
+def _normalize_reasoning_fields(db_config: LLMConfig) -> None:
+    thinking = getattr(db_config, "thinking", None)
+    if isinstance(thinking, str):
+        lowered = thinking.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            db_config.thinking = True
+        elif lowered in {"false", "0", "no", "off"}:
+            db_config.thinking = False
+        else:
+            db_config.thinking = None
+    elif isinstance(thinking, (int, float)) and not isinstance(thinking, bool):
+        db_config.thinking = bool(thinking)
+    elif thinking is not None:
+        db_config.thinking = bool(thinking)
+
+    raw_reasoning_effort = getattr(db_config, "reasoning_effort", None)
+    normalized_reasoning_effort = (str(raw_reasoning_effort).strip().lower() if raw_reasoning_effort is not None else "")
+    db_config.reasoning_effort = normalized_reasoning_effort if normalized_reasoning_effort in {"low", "medium", "high", "max"} else None
+
+
 def create_llm_config(session: Session, config_in: LLMConfigCreate) -> LLMConfig:
     db_config = LLMConfig.model_validate(config_in)
     _sync_legacy_base_url(db_config)
     _normalize_integral_fields(db_config)
     _normalize_capability_fields(db_config)
+    _normalize_reasoning_fields(db_config)
     session.add(db_config)
     session.commit()
     session.refresh(db_config)
@@ -132,6 +153,7 @@ def get_llm_configs(session: Session) -> list[LLMConfig]:
         _sync_legacy_base_url(cfg)
         _normalize_integral_fields(cfg)
         _normalize_capability_fields(cfg)
+        _normalize_reasoning_fields(cfg)
     return configs
 
 
@@ -141,6 +163,7 @@ def get_llm_config(session: Session, config_id: int) -> LLMConfig | None:
         _sync_legacy_base_url(cfg)
         _normalize_integral_fields(cfg)
         _normalize_capability_fields(cfg)
+        _normalize_reasoning_fields(cfg)
     return cfg
 
 
@@ -155,6 +178,7 @@ def update_llm_config(session: Session, config_id: int, config_in: LLMConfigUpda
     _sync_legacy_base_url(db_config)
     _normalize_integral_fields(db_config)
     _normalize_capability_fields(db_config)
+    _normalize_reasoning_fields(db_config)
 
     session.add(db_config)
     session.commit()
@@ -252,6 +276,8 @@ def copy_llm_config(session: Session, config_id: int) -> LLMConfig | None:
         custom_request_path=transport["custom_request_path"],
         models_path=transport["models_path"],
         user_agent=transport["user_agent"],
+        thinking=getattr(source_config, "thinking", None),
+        reasoning_effort=getattr(source_config, "reasoning_effort", None),
         base_url=transport["api_base"],
         token_limit=source_config.token_limit,
         call_limit=source_config.call_limit,
@@ -267,6 +293,7 @@ def copy_llm_config(session: Session, config_id: int) -> LLMConfig | None:
     )
     _normalize_integral_fields(new_config)
     _normalize_capability_fields(new_config)
+    _normalize_reasoning_fields(new_config)
 
     session.add(new_config)
     session.commit()

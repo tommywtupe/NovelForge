@@ -60,7 +60,7 @@ async def get_models_endpoint(request: LLMGetModelsRequest):
     models: list[str] = []
 
     try:
-        if provider in {"openai_compatible", "openai"}:
+        if provider in {"openai_compatible", "openai", "deepseek"}:
             transport = llm_config_service.resolve_transport_settings(
                 provider=provider,
                 api_base=request.api_base,
@@ -112,6 +112,8 @@ async def test_llm_connection_endpoint(connection_data: LLMConnectionTest):
             api_protocol=connection_data.api_protocol,
             custom_request_path=connection_data.custom_request_path,
             user_agent=connection_data.user_agent,
+            thinking_enabled=getattr(connection_data, "thinking", None),
+            reasoning_effort=getattr(connection_data, "reasoning_effort", None),
         )
         await model.ainvoke("ping")
         return ApiResponse(message="Connection successful")

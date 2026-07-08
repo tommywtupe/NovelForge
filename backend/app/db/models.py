@@ -31,6 +31,14 @@ class LLMConfig(SQLModel, table=True):
     custom_request_path: Optional[str] = None
     models_path: Optional[str] = None
     user_agent: Optional[str] = None
+    thinking: Optional[bool] = Field(
+        default=None,
+        sa_column=Column(sa.Boolean, nullable=True),
+    )
+    reasoning_effort: Optional[str] = Field(
+        default=None,
+        sa_column=Column(sa.String, nullable=True),
+    )
     base_url: Optional[str] = None  # 历史兼容字段，新实现统一收口到 api_base
     # 统计与配额（-1 表示不限）——在 DB 层也设置 server_default，便于 Alembic 自动包含
     token_limit: int = Field(

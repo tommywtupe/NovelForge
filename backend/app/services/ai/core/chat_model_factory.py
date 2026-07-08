@@ -14,6 +14,11 @@ from sqlmodel import Session
 from app.db.models import LLMConfig
 from app.services import llm_config_service
 
+try:
+    from langchain_deepseek import ChatDeepSeek  # type: ignore
+except ImportError:
+    ChatDeepSeek = None
+
 
 def _sanitize_common_generation_kwargs(
     *,
@@ -48,6 +53,51 @@ def _build_openai_family_transport_kwargs(transport: dict) -> dict:
     return kwargs
 
 
+def _normalize_reasoning_effort(value: str | None) -> str | None:
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in {"low", "medium", "high", "max"} else None
+
+
+def _build_openai_family_extra_body(
+    *,
+    thinking_enabled: Optional[bool],
+    reasoning_effort: Optional[str],
+) -> dict | None:
+    normalized_reasoning_effort = _normalize_reasoning_effort(reasoning_effort)
+    if thinking_enabled is None and normalized_reasoning_effort is None:
+        return None
+
+    extra_body: dict = {}
+    if thinking_enabled is not None:
+        extra_body["enable_thinking"] = thinking_enabled
+    if normalized_reasoning_effort is not None:
+        extra_body["reasoning_effort"] = normalized_reasoning_effort
+    return extra_body
+
+
+def _build_deepseek_extra_body(
+    *,
+    thinking_enabled: Optional[bool],
+    reasoning_effort: Optional[str],
+) -> dict | None:
+    normalized_reasoning_effort = _normalize_reasoning_effort(reasoning_effort)
+    if thinking_enabled is None and normalized_reasoning_effort is None:
+        return None
+
+    extra_body: dict = {}
+    if thinking_enabled is not None:
+        extra_body["thinking"] = {"type": "enabled" if thinking_enabled else "disabled"}
+    if normalized_reasoning_effort is not None:
+        extra_body["reasoning_effort"] = normalized_reasoning_effort
+    return extra_body
+
+
+def _load_chat_deepseek():
+    if ChatDeepSeek is None:
+        raise ImportError("使用 DeepSeek provider 需要安装 langchain-deepseek")
+    return ChatDeepSeek
+
+
 def build_chat_model_from_payload(
     *,
     provider: str,
@@ -62,6 +112,7 @@ def build_chat_model_from_payload(
     max_tokens: Optional[int] = None,
     timeout: Optional[float] = None,
     thinking_enabled: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None,
 ):
     if not api_key:
         raise ValueError("未提供 API Key")
@@ -88,8 +139,12 @@ def build_chat_model_from_payload(
             **_build_openai_family_transport_kwargs(transport),
             **common_kwargs,
         }
-        if thinking_enabled is not None:
-            model_kwargs["extra_body"] = {"enable_thinking": thinking_enabled}
+        extra_body = _build_openai_family_extra_body(
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
+        )
+        if extra_body:
+            model_kwargs["extra_body"] = extra_body
 
         # `responses` 模式下统一走 `ChatOpenAI`。
         # 原先 openai_compatible 仍走 `ChatQwen`，会在流式 continuation 时构造出
@@ -101,6 +156,22 @@ def build_chat_model_from_payload(
         if provider_name == "openai_compatible":
             return ChatQwen(**model_kwargs)
         return ChatOpenAI(**model_kwargs)
+
+    if provider_name == "deepseek":
+        chat_deepseek_cls = _load_chat_deepseek()
+        model_kwargs = {
+            "model": model_name,
+            "api_key": api_key,
+            **_build_openai_family_transport_kwargs(transport),
+            **common_kwargs,
+        }
+        extra_body = _build_deepseek_extra_body(
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
+        )
+        if extra_body:
+            model_kwargs["extra_body"] = extra_body
+        return chat_deepseek_cls(**model_kwargs, disabled_params={"tool_choice": None})
 
     if provider_name == "anthropic":
         model_kwargs = {
@@ -147,6 +218,7 @@ def build_chat_model(
     max_tokens: Optional[int] = None,
     timeout: Optional[float] = None,
     thinking_enabled: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None,
 ):
     cfg = _get_llm_config(session, llm_config_id)
     return build_chat_model_from_payload(
@@ -161,5 +233,6 @@ def build_chat_model(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
-        thinking_enabled=thinking_enabled,
+        thinking_enabled=thinking_enabled if thinking_enabled is not None else getattr(cfg, "thinking", None),
+        reasoning_effort=reasoning_effort if reasoning_effort is not None else getattr(cfg, "reasoning_effort", None),
     )

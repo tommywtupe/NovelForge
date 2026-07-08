@@ -10,6 +10,7 @@ neo4j
 python-dotenv
 langchain>1.0
 langchain-openai
+langchain-deepseek
 langchain-google-genai
 langchain-anthropic
 langchain_qwq

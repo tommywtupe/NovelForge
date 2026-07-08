@@ -137,6 +137,8 @@ def _payload_kwargs(request: LLMCapabilityTestRequest, *, user_agent: str | None
         "api_protocol": api_protocol or request.api_protocol,
         "custom_request_path": request.custom_request_path,
         "user_agent": user_agent if user_agent is not None else request.user_agent,
+        "thinking_enabled": getattr(request, "thinking", None),
+        "reasoning_effort": getattr(request, "reasoning_effort", None),
         "temperature": 0,
         "max_tokens": 64,
         "timeout": 20,
@@ -149,7 +151,7 @@ async def _probe_models_list(request: LLMCapabilityTestRequest, *, user_agent: s
 
     provider = (request.provider or "").lower()
     try:
-        if provider in {"openai", "openai_compatible"}:
+        if provider in {"openai", "openai_compatible", "deepseek"}:
             transport = llm_config_service.resolve_transport_settings(
                 provider=provider,
                 api_base=request.api_base,
