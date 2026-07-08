@@ -22,6 +22,8 @@ class StoryAxisBootstrapResourceTests(unittest.TestCase):
             "StoryAxis·阶段大纲",
             "StoryAxis·章节大纲",
             "StoryAxis·内容生成",
+            "StoryAxis·正文翻译",
+            "StoryAxis·术语翻译",
             "StoryAxis·阶段审核",
             "StoryAxis·章节审核",
         }
