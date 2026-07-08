@@ -67,3 +67,13 @@ backend/build
 
 # Node modules
 node_modules/
+
+# Local tool state and temp files
+.cc-switch/
+.codex/
+Dockerfile.agent
+Dockerfile.devtools
+docker-compose.yml
+temp-command.txt
+test/
+repomix-output.xml
