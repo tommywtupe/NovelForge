@@ -69,3 +69,8 @@ backend/build
 # Node modules
 node_modules/
 temp-command.txt
+docker-compose.yml
+Dockerfile.agent
+Dockerfile.devtools
+.cc-switch
+.codex
