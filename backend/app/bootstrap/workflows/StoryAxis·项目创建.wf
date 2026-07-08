@@ -1,0 +1,116 @@
+# 工作流：StoryAxis·项目创建
+# 功能：为 StoryAxis 项目初始化基础创作卡与翻译资产
+
+#@node(description="触发器：监听 StoryAxis 项目创建事件")
+trigger = Trigger.ProjectCreated(template="storyaxis")
+#</node>
+
+
+#@node()
+tags = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·作品标签",
+    title="StoryAxis·作品标签"
+  )
+#</node>
+
+
+#@node()
+power = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·金手指",
+    title="StoryAxis·金手指"
+  )
+#</node>
+
+
+#@node()
+one_sentence = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·一句话梗概",
+    title="StoryAxis·一句话梗概"
+  )
+#</node>
+
+
+#@node()
+outline = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·故事大纲",
+    title="StoryAxis·故事大纲"
+  )
+#</node>
+
+
+#@node()
+world = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·世界观设定",
+    title="StoryAxis·世界观设定"
+  )
+#</node>
+
+
+#@node()
+blueprint = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·核心蓝图",
+    title="StoryAxis·核心蓝图"
+  )
+#</node>
+
+
+#@node(description="创建繁体中文术语表")
+glossary_zh_tw = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·翻译术语表",
+    title="StoryAxis·术语表·繁體中文",
+    content={
+        "name": "StoryAxis·术语表·繁體中文",
+        "target_language": "繁體中文",
+        "terms": []
+    }
+  )
+#</node>
+
+
+#@node(description="创建英文术语表")
+glossary_en = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·翻译术语表",
+    title="StoryAxis·术语表·英文",
+    content={
+        "name": "StoryAxis·术语表·英文",
+        "target_language": "英文",
+        "terms": []
+    }
+  )
+#</node>
+
+
+#@node(description="创建日文术语表")
+glossary_ja = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·翻译术语表",
+    title="StoryAxis·术语表·日文",
+    content={
+        "name": "StoryAxis·术语表·日文",
+        "target_language": "日文",
+        "terms": []
+    }
+  )
+#</node>
+
+
+#@node(description="创建韩文术语表")
+glossary_ko = Card.Create(
+    project_id=trigger.project_id,
+    card_type="StoryAxis·翻译术语表",
+    title="StoryAxis·术语表·韓文",
+    content={
+        "name": "StoryAxis·术语表·韓文",
+        "target_language": "韓文",
+        "terms": []
+    }
+  )
+#</node>

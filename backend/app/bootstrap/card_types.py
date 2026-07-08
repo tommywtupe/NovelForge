@@ -187,6 +187,36 @@ def create_default_card_types(session: Session) -> None:
         "下一章节大纲:@type:章节大纲[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{content.title,content.overview,content.entity_list}\n"
     )
 
+    def sa(name: str) -> str:
+        return f"StoryAxis·{name}"
+
+    storyaxis_stage_review_context_template = (
+        f"世界观设定:@{sa('世界观设定')}.content.world_view\n"
+        f"组织/势力设定:@type:{sa('组织卡')}[previous:global].{{content.name,content.entity_type,content.life_span,content.description,content.influence,content.relationship}}\n"
+        f"分卷主线:@parent.content.main_target\n"
+        f"分卷辅线:@parent.content.branch_line\n"
+        f"角色卡信息:@type:{sa('角色卡')}[previous:global].{{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}}\n"
+        f"地图/场景卡信息:@type:{sa('场景卡')}[previous].{{content.name,content.description}}\n"
+        f"之前的阶段故事大纲:@type:{sa('阶段大纲')}[previous:global:1].{{content.stage_name,content.reference_chapter,content.analysis,content.overview,content.entity_snapshot}}\n"
+        f"上一章节大纲概述:@type:{sa('章节大纲')}[previous:global:1].{{content.title,content.overview,content.entity_list,content.beat_list}}\n"
+        "本卷的StageCount总数为：@parent.content.stage_count\n"
+        "卷末实体状态快照:@parent.content.entity_snapshot\n"
+    )
+
+    storyaxis_chapter_review_context_template = (
+        f"世界观设定:@{sa('世界观设定')}.content.world_view\n"
+        f"组织/势力设定:@type:{sa('组织卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.description,content.influence,content.relationship,content.dynamic_state}}\n"
+        f"场景卡:@type:{sa('场景卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.description,content.dynamic_state}}\n"
+        "当前故事阶段大纲（仅供方向指引，不得直接写入正文）: @parent.content.overview\n"
+        f"角色卡:@type:{sa('角色卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}}\n"
+        f"物品卡:@type:{sa('物品卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.category,content.description,content.current_state,content.power_or_effect}}\n"
+        f"概念卡:@type:{sa('概念卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.category,content.description,content.rule_definition,content.mastery_hint}}\n"
+        f"最近的章节原文:@type:{sa('章节正文')}[previous:1].{{content.title,content.chapter_number,content.content}}\n"
+        "参与者实体列表:@self.content.entity_list\n"
+        f"当前章节大纲:@type:{sa('章节大纲')}[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{{content.title,content.overview,content.entity_list,content.beat_list}}\n"
+        f"下一章节大纲:@type:{sa('章节大纲')}[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{{content.title,content.overview,content.entity_list,content.beat_list}}\n"
+    )
+
     default_types = {
         "通用文本": {"editor_component": "MarkdownTextEditor", "is_singleton": False, "is_ai_enabled": False, "default_ai_context_template": None},
         "作品标签": {"editor_component": "TagsEditor", "is_singleton": True, "is_ai_enabled": False, "default_ai_context_template": None},
@@ -271,6 +301,142 @@ def create_default_card_types(session: Session) -> None:
         "物品卡": {"default_ai_context_template": None, "is_ai_enabled": False},
         "概念卡": {"default_ai_context_template": None, "is_ai_enabled": False},
         "文件夹": {"is_singleton": False, "is_ai_enabled": False, "default_ai_context_template": None},
+        sa("作品标签"): {"editor_component": "TagsEditor", "is_singleton": True, "is_ai_enabled": False, "default_ai_context_template": None},
+        sa("金手指"): {"is_singleton": True, "default_ai_context_template": f"作品标签: @{sa('作品标签')}.content"},
+        sa("一句话梗概"): {
+            "is_singleton": True,
+            "default_ai_context_template": f"作品标签: @{sa('作品标签')}.content\n金手指/特殊能力: @{sa('金手指')}.content.special_abilities",
+        },
+        sa("故事大纲"): {
+            "is_singleton": True,
+            "default_ai_context_template": f"作品标签: @{sa('作品标签')}.content\n金手指/特殊能力: @{sa('金手指')}.content.special_abilities\n故事梗概: @{sa('一句话梗概')}.content.one_sentence",
+        },
+        sa("世界观设定"): {
+            "is_singleton": True,
+            "default_ai_context_template": f"作品标签: @{sa('作品标签')}.content\n金手指/特殊能力: @{sa('金手指')}.content.special_abilities\n故事大纲: @{sa('故事大纲')}.content.overview",
+        },
+        sa("核心蓝图"): {
+            "is_singleton": True,
+            "default_ai_context_template": (
+                f"作品标签: @{sa('作品标签')}.content\n"
+                f"金手指/特殊能力: @{sa('金手指')}.content.special_abilities\n"
+                f"故事大纲: @{sa('故事大纲')}.content.overview\n"
+                f"世界观设定: @{sa('世界观设定')}.content.world_view\n"
+                f"组织/势力设定:@type:{sa('组织卡')}[previous:global].{{content.name,content.description,content.influence,content.relationship}}\n"
+            ),
+        },
+        sa("分卷大纲"): {
+            "default_ai_context_template": (
+                f"总卷数:@{sa('核心蓝图')}.content.volume_count\n"
+                f"故事大纲:@{sa('故事大纲')}.content.overview\n"
+                f"作品标签:@{sa('作品标签')}.content\n"
+                f"世界观设定: @{sa('世界观设定')}.content.world_view\n"
+                f"组织/势力设定:@type:{sa('组织卡')}[previous:global].{{content.name,content.description,content.influence,content.relationship}}\n"
+                f"角色卡信息:@type:{sa('角色卡')}[previous].{{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}}\n"
+                f"地图/场景卡信息:@type:{sa('场景卡')}[previous].{{content.name,content.description}}\n"
+                f"上一卷信息:@type:{sa('分卷大纲')}[index=$current.volumeNumber-1].content\n"
+                "接下来请你创作当前分卷细纲，并严格遵守实体白名单、阶段节奏和长线伏笔要求。\n"
+            ),
+        },
+        sa("写作指南"): {
+            "is_singleton": False,
+            "default_ai_context_template": (
+                f"世界观设定: @{sa('世界观设定')}.content.world_view\n"
+                f"组织/势力设定:@type:{sa('组织卡')}[previous:global].{{content.name,content.entity_type,content.life_span,content.description,content.influence,content.relationship}}\n"
+                "当前分卷主线:@parent.content.main_target\n"
+                "当前分卷辅线:@parent.content.branch_line\n"
+                "该卷的阶段数量及卷末实体状态快照:@parent.{content.stage_count,content.entity_snapshot}\n"
+                f"角色卡信息:@type:{sa('角色卡')}[previous].{{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}}\n"
+                f"地图/场景卡信息:@type:{sa('场景卡')}[previous].{{content.name,content.description}}\n"
+                "请为当前分卷生成一份写作指南，重点约束认知边界、爽点节奏和负向文风禁令。\n"
+            ),
+        },
+        sa("阶段大纲"): {
+            "default_ai_context_template": (
+                f"世界观设定: @{sa('世界观设定')}.content.world_view\n"
+                f"组织/势力设定:@type:{sa('组织卡')}[previous:global].{{content.name,content.entity_type,content.life_span,content.description,content.influence,content.relationship}}\n"
+                "分卷主线:@parent.content.main_target\n"
+                "分卷辅线:@parent.content.branch_line\n"
+                f"角色卡信息:@type:{sa('角色卡')}[previous:global].{{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}}\n"
+                f"地图/场景卡信息:@type:{sa('场景卡')}[previous:global].{{content.name,content.description,content.dynamic_state}}\n"
+                "该卷的角色行动简述:@parent.content.character_action_list\n"
+                f"之前的阶段故事大纲，确保章节范围、剧情能够衔接:@type:{sa('阶段大纲')}[previous:global:1].{{content.stage_name,content.reference_chapter,content.analysis,content.overview,content.entity_snapshot}}\n"
+                f"上一章节大纲概述，确保能够衔接剧情:@type:{sa('章节大纲')}[previous:global:1].{{content.overview,content.beat_list}}\n"
+                "本卷的StageCount总数为：@parent.content.stage_count\n"
+                "注意，请务必在限定阶段内逐步收束本卷主线，但当前阶段只产出 chapter_outline_list，不直接生成 beat_list。\n"
+                f"该卷的写作注意事项:@type:{sa('写作指南')}[sibling].content.content\n"
+            ),
+            "default_ai_context_template_review": storyaxis_stage_review_context_template,
+        },
+        sa("章节大纲"): {
+            "default_ai_context_template": (
+                f"世界观设定: @{sa('世界观设定')}.content.world_view\n"
+                "volume_number: @self.content.volume_number\n"
+                f"volume_main_target: @type:{sa('分卷大纲')}[index=$current.volumeNumber].content.main_target\n"
+                f"volume_branch_line: @type:{sa('分卷大纲')}[index=$current.volumeNumber].content.branch_line\n"
+                f"角色卡信息:@type:{sa('角色卡')}[previous:global].{{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}}\n"
+                f"地图/场景卡信息:@type:{sa('场景卡')}[previous:global].{{content.name,content.description,dynamic_state:content.dynamic_state}}\n"
+                f"物品卡信息:@type:{sa('物品卡')}[previous:global].{{content.name,content.category,content.current_state}}\n"
+                f"概念卡信息:@type:{sa('概念卡')}[previous:global].{{content.name,content.category,content.rule_definition}}\n"
+                "当前阶段故事概述: @stage:current.overview\n"
+                "当前阶段覆盖章节范围: @stage:current.reference_chapter\n"
+                f"之前的章节大纲:@type:{sa('章节大纲')}[sibling].{{content.chapter_number,content.overview,content.entity_list}}\n"
+                "请为当前章节生成高密度章节蓝图，并给出足以支撑长篇扩写的 beat_list 与主视角控制。\n"
+            ),
+        },
+        sa("章节正文"): {
+            "editor_component": "CodeMirrorEditor",
+            "is_ai_enabled": False,
+            "default_ai_context_template": (
+                f"世界观设定: @{sa('世界观设定')}.content.world_view\n"
+                f"组织/势力设定:@type:{sa('组织卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.description,content.influence,content.relationship,content.dynamic_state}}\n"
+                f"场景卡:@type:{sa('场景卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.description,content.dynamic_state}}\n"
+                "当前故事阶段大纲（仅供方向指引，不得直接写入正文）: @parent.content.overview\n"
+                f"角色卡:@type:{sa('角色卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.life_span,content.role_type,content.born_scene,content.description,content.personality,content.physique,content.aura,content.appearance,content.dressing,content.core_desire,content.core_fear,content.defense_mechanism,content.psychological_trauma,content.public_persona,content.private_persona,content.the_shadow_self,content.core_drive,content.character_arc,content.dynamic_info}}\n"
+                f"物品卡:@type:{sa('物品卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.category,content.description,content.current_state,content.power_or_effect}}\n"
+                f"概念卡:@type:{sa('概念卡')}[index=filter:content.name in $self.content.entity_list].{{content.name,content.category,content.description,content.rule_definition,content.mastery_hint}}\n"
+                f"最近的章节原文，确保能够衔接剧情:@type:{sa('章节正文')}[previous:1].{{content.title,content.chapter_number,content.content}}\n"
+                "参与者实体列表，确保生成内容只会出场这些实体:@self.content.entity_list\n"
+                f"当前章节大纲（仅供方向指引，不得直接写入正文）:@type:{sa('章节大纲')}[index=filter:content.volume_number = $self.content.volume_number&&content.stage_number= $self.content.stage_number&&content.chapter_number= $self.content.chapter_number].{{content.title,content.overview,content.entity_list,content.beat_list,content.beat_main_perspective}}\n"
+                f"下一章节大纲（仅供方向指引，不得提前写入）:@type:{sa('章节大纲')}[index=filter:content.volume_number = $self.content.volume_number && content.chapter_number = $self.content.chapter_number+1].{{content.title,content.overview,content.entity_list,content.beat_list}}\n"
+                f"写作时请结合写作指南要求:@type:{sa('写作指南')}[index=filter:content.volume_number = $self.content.volume_number].{{content.content}}\n"
+            ),
+            "default_ai_context_template_review": storyaxis_chapter_review_context_template,
+        },
+        sa("内容审核卡片"): {
+            "editor_component": "ReviewResultCardEditor",
+            "is_ai_enabled": False,
+            "default_ai_context_template": None,
+            "default_ai_context_template_review": None,
+        },
+        sa("角色卡"): {"default_ai_context_template": None},
+        sa("场景卡"): {"default_ai_context_template": None},
+        sa("组织卡"): {"default_ai_context_template": None},
+        sa("物品卡"): {"default_ai_context_template": None, "is_ai_enabled": False},
+        sa("概念卡"): {"default_ai_context_template": None, "is_ai_enabled": False},
+        sa("正文翻译卡"): {
+            "editor_component": "TransCodeMirrorEditor",
+            "is_ai_enabled": True,
+            "default_ai_context_template": (
+                "【待翻译章节信息】\n"
+                "章节标题: @parent.content.title\n"
+                "卷号: @parent.content.volume_number\n"
+                "阶段号: @parent.content.stage_number\n"
+                "章节序号: @parent.content.chapter_number\n\n"
+                "【原文正文】\n"
+                "@parent.content.content\n"
+            ),
+        },
+        sa("翻译术语表"): {
+            "editor_component": "GlossaryEditor",
+            "is_ai_enabled": False,
+            "is_singleton": False,
+            "default_ai_context_template": (
+                f"作品标签: @{sa('作品标签')}.content\n"
+                f"故事大纲概述: @{sa('故事大纲')}.content.overview\n"
+                f"世界观设定: @{sa('世界观设定')}.content.world_view\n"
+            ),
+        },
     }
 
     # 类型默认 AI 参数预设（不包含 llm_config_id）
@@ -291,6 +457,24 @@ def create_default_card_types(session: Session) -> None:
         "组织卡": {"prompt_name": "关系提取", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
         "物品卡": None,
         "概念卡": None,
+        sa("金手指"): {"prompt_name": "金手指生成", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
+        sa("一句话梗概"): {"prompt_name": "一句话梗概", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
+        sa("故事大纲"): {"prompt_name": "一段话大纲", "temperature": 0.7, "max_tokens": 8192, "timeout": 120},
+        sa("世界观设定"): {"prompt_name": "世界观设定", "temperature": 0.7, "max_tokens": 4096, "timeout": 150},
+        sa("核心蓝图"): {"prompt_name": "核心蓝图", "temperature": 0.7, "max_tokens": 8192, "timeout": 150},
+        sa("分卷大纲"): {"prompt_name": sa("分卷大纲"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
+        sa("写作指南"): {"prompt_name": sa("写作指南"), "temperature": 0.6, "max_tokens": 8192, "timeout": 150},
+        sa("阶段大纲"): {"prompt_name": sa("阶段大纲"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
+        sa("章节大纲"): {"prompt_name": sa("章节大纲"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
+        sa("章节正文"): {"prompt_name": sa("内容生成"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
+        sa("内容审核卡片"): None,
+        sa("角色卡"): {"prompt_name": "角色动态信息提取", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
+        sa("场景卡"): {"prompt_name": "内容生成", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
+        sa("组织卡"): {"prompt_name": "关系提取", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
+        sa("物品卡"): None,
+        sa("概念卡"): None,
+        sa("正文翻译卡"): None,
+        sa("翻译术语表"): None,
     }
 
     # 类型名称到内置响应模型的映射（直接用于生成 json_schema）
@@ -314,6 +498,25 @@ def create_default_card_types(session: Session) -> None:
         "物品卡": "ItemCard",
         "概念卡": "ConceptCard",
         "文件夹": "Text",
+        sa("作品标签"): "Tags",
+        sa("金手指"): "SpecialAbilityResponse",
+        sa("一句话梗概"): "OneSentence",
+        sa("故事大纲"): "ParagraphOverview",
+        sa("世界观设定"): "WorldBuilding",
+        sa("核心蓝图"): "Blueprint",
+        sa("分卷大纲"): "VolumeOutline",
+        sa("写作指南"): "WritingGuide",
+        sa("阶段大纲"): "StageLine",
+        sa("章节大纲"): "ChapterOutline",
+        sa("章节正文"): "Chapter",
+        sa("内容审核卡片"): "ReviewResultCardContent",
+        sa("角色卡"): "CharacterCard",
+        sa("场景卡"): "SceneCard",
+        sa("组织卡"): "OrganizationCard",
+        sa("物品卡"): "ItemCard",
+        sa("概念卡"): "ConceptCard",
+        sa("正文翻译卡"): "TranslationChapter",
+        sa("翻译术语表"): "TranslationGlossary",
     }
 
     overwrite_card_schemas = settings.bootstrap.should_overwrite_card_schemas

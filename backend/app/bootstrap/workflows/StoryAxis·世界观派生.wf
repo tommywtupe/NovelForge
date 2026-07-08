@@ -1,0 +1,43 @@
+# 工作流：StoryAxis·世界观派生
+# 功能：世界观设定卡片保存时，抽取长期组织/势力并生成 StoryAxis 组织卡
+
+#@node(description="触发器：监听 StoryAxis 世界观设定卡片保存")
+trigger = Trigger.CardSaved(card_type="StoryAxis·世界观设定")
+#</node>
+
+
+#@node(description="读取当前卡片")
+card = Card.Read(card_id=trigger.card_id)
+#</node>
+
+
+#@node(description="提取组织列表")
+organizations = Logic.Expression(
+    expression="card.content.world_view.social_system.major_power_camps or []"
+  )
+#</node>
+
+
+#@node(description="批量创建组织卡片")
+org_cards = Card.BatchUpsert(
+    project_id=trigger.project_id,
+    parent_id=trigger.card_id,
+    card_type="StoryAxis·组织卡",
+    title_template="{item.name}",
+    items=organizations.result
+  )
+#</node>
+
+
+#@node(description="清空来源列表，避免重复创建")
+update_result = Card.Update(
+    card_id=trigger.card_id,
+    content_merge={
+      "world_view": {
+        "social_system": {
+          "major_power_camps": []
+        }
+      }
+    }
+  )
+#</node>
