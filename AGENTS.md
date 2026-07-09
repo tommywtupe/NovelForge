@@ -1,33 +1,33 @@
-# StoryAxis Migration Guardrails
+# StoryAxis 迁移约束
 
-## Objective
+## 目标
 
-Migrate the `self` branch's StoryAxis-related capabilities onto the current `origin/main` baseline while preserving `main`'s existing UI, workflow engine, and newer LLM compatibility infrastructure as much as possible.
+在当前 `origin/main` 基线上迁移 `self` 分支中的 StoryAxis 相关能力，同时尽量保留 `main` 现有 UI、工作流引擎以及较新的 LLM 兼容基础设施。
 
-## Source Of Truth
+## 真源
 
-- `origin/main` is the baseline for core product UI, workflow engine, LLM config UX, and runtime infrastructure.
-- `StoryAxis` is a code-shipped built-in workflow system.
-- `StoryAxis` workflow definitions live in `backend/app/bootstrap/workflows/*.wf`.
-- For `StoryAxis` workflows, repository files are the source of truth; database workflow rows are runtime mirrors populated by bootstrap.
-- The project creation template id for StoryAxis is fixed to `storyaxis`.
+- `origin/main` 是核心产品 UI、工作流引擎、LLM 配置体验与运行时基础设施的基线。
+- `StoryAxis` 是一套随代码发布的内置工作流系统。
+- `StoryAxis` 工作流定义位于 `backend/app/bootstrap/workflows/*.wf`。
+- 对于 `StoryAxis` 工作流，仓库中的定义文件是真源；数据库中的工作流记录只是 bootstrap 后的运行镜像。
+- `StoryAxis` 的项目创建模板标识固定为 `storyaxis`。
 
-## Architecture Boundary
+## 架构边界
 
-- `StoryAxis` is not a separate product shell and not a separate global UI entry.
-- `StoryAxis` is a distinct built-in workflow family implemented on top of the existing code-based workflow system already present in `main`.
-- `StoryAxis` must remain distinct from the current built-in card/workflow chain used by `main`.
-- `StoryAxis` may add dedicated editor components such as `GlossaryEditor.vue` and `TransCodeMirrorEditor.vue`, but these should be attached to StoryAxis-specific card types rather than replacing `main`'s default authoring flow.
+- `StoryAxis` 不是独立产品壳，也不是独立全局入口。
+- `StoryAxis` 是建立在 `main` 已有代码式工作流系统之上的一套独立内置工作流族。
+- `StoryAxis` 必须与 `main` 当前默认的内置卡片链路、工作流链路保持区隔。
+- `StoryAxis` 可以增加专用编辑器组件，例如 `GlossaryEditor.vue` 与 `TransCodeMirrorEditor.vue`，但这些组件应挂载到 StoryAxis 专属卡片类型上，而不是替换 `main` 的默认写作流程。
 
-## Required Migration Scope
+## 必须迁移的范围
 
-### 1. Low-Level LLM Compatibility
+### 1. 底层 LLM 兼容能力
 
-The `self` branch's DeepSeek compatibility is mandatory and must be ported into `main` without regressing `main`'s newer transport/probe stack.
+`self` 分支中的 DeepSeek 兼容能力必须迁移到 `main`，且不能破坏 `main` 当前较新的 transport / probe 体系。
 
-Required outcomes:
+必须保留的结果：
 
-- Preserve `main`'s current transport compatibility chain:
+- 保留 `main` 当前的传输兼容链：
   - `api_protocol`
   - `custom_request_path`
   - `models_path`
@@ -35,22 +35,22 @@ Required outcomes:
   - capability probe
   - assistant mode recommendation
   - stream downgrade behavior
-- Add `ChatDeepSeek` support from `self`
-- Add the `deepseek` provider branch in chat model construction
-- Preserve the `disabled_params={"tool_choice": None}` DeepSeek-specific behavior
-- Ensure model listing supports `deepseek`
+- 引入 `self` 的 `ChatDeepSeek` 支持
+- 增加 `deepseek` provider 分支
+- 保留 `disabled_params={"tool_choice": None}` 这一 DeepSeek 专属兼容行为
+- 确保模型列表获取支持 `deepseek`
 
-Do not replace `main`'s LLM config system wholesale with `self`'s older variant.
+禁止用 `self` 的旧版 LLM 配置体系整体替换 `main` 当前实现。
 
-### 2. StoryAxis Data Model
+### 2. StoryAxis 数据模型
 
-StoryAxis must carry over `self`'s deeper character modeling and chapter beat modeling in full.
+StoryAxis 必须完整承接 `self` 的深层角色建模与章节节拍建模。
 
-This includes, at minimum:
+至少包括：
 
-- extended `role_type`
+- 扩展后的 `role_type`
 - `DynamicInfoItem.chapter`
-- character deep-profile fields:
+- 深层角色画像字段：
   - `physique`
   - `aura`
   - `appearance`
@@ -62,92 +62,92 @@ This includes, at minimum:
   - `public_persona`
   - `private_persona`
   - `the_shadow_self`
-- chapter beat structures:
+- 章节节拍结构：
   - `BeatItem`
   - `beat_list`
   - `beat_main_perspective`
 
-### 3. StoryAxis Runtime Chain
+### 3. StoryAxis 运行时链路
 
-StoryAxis must carry over the runtime path required to actually use the above structures, not just store them.
+StoryAxis 必须迁移这些结构真正生效所需的运行时链路，而不是只迁存储字段。
 
-This includes:
+至少包括：
 
-- continuation request support for `beat_list_json`
-- beat parsing in continuation/generation services
-- character deep-profile text formatting used for generation/runtime hints
-- beat-budget and perspective-lock behavior in continuation runtime
-- prompt/context wiring required for these fields to influence output
+- `beat_list_json` 在续写请求中的支持
+- 节拍列表在续写/生成服务中的解析
+- 深层角色画像在生成时的自然语言格式化与提示注入
+- continuation runtime 中的节拍预算与主视角锁定逻辑
+- 让上述字段真正影响输出的 prompt / context 接线
 
-### 4. StoryAxis Heavy Context Chain
+### 4. StoryAxis 重上下文链路
 
-`self`'s heavier authoring context is a required migration area.
+`self` 中更重的创作上下文是必须迁移的重点。
 
-Port the StoryAxis-specific context templates and related prompt constraints for:
+需要迁移 StoryAxis 专属的上下文模板与提示约束，用于：
 
-- volume-level planning
-- writing guide generation
-- stage generation
-- chapter outline generation
-- chapter writing
-- review constraints
+- 分卷规划
+- 写作指南生成
+- 阶段生成
+- 章节蓝图生成
+- 正文生成
+- 审核约束
 
-These should preserve:
+必须保留的效果包括：
 
-- stricter chapter-outline adherence
-- stricter entity introduction limits
-- heavier use of world/entity/stage/chapter context
-- support for dense enough outlines to sustain long-form chapter generation
+- 更严格地遵守章节大纲
+- 更严格地限制新实体引入
+- 更重地使用世界观 / 实体 / 阶段 / 章节上下文
+- 保证章节大纲密度足以支撑长篇正文扩写
 
-### 5. StoryAxis Translation And Glossary
+### 5. StoryAxis 翻译与术语表
 
-StoryAxis must keep the `self` translation/glossary capability set.
+StoryAxis 必须保留 `self` 的翻译与术语表能力集。
 
-Required outcomes:
+必须达到的结果：
 
-- StoryAxis glossary card types
-- StoryAxis translation card types
-- StoryAxis glossary editor support
-- StoryAxis translation editor support
-- StoryAxis project initialization workflow that prepares translation assets
-- StoryAxis workflows for glossary sync / glossary completion / translation derivation
+- StoryAxis 术语表卡片类型
+- StoryAxis 翻译卡片类型
+- StoryAxis 术语表专用编辑器支持
+- StoryAxis 翻译专用编辑器支持
+- StoryAxis 项目初始化工作流可自动准备翻译资产
+- StoryAxis 工作流可完成术语同步 / 术语补全 / 翻译派生
 
-## StoryAxis Isolation Rules
+## StoryAxis 隔离规则
 
-- StoryAxis card types must be distinct from `main`'s current core card types.
-- StoryAxis workflows must be named under the `StoryAxis` family.
-- StoryAxis workflows should primarily operate on StoryAxis-owned card types and prompts.
-- Avoid invasive rewrites of `main`'s current default workflow chain unless a shared low-level runtime fix is required.
+- StoryAxis 卡片类型必须与 `main` 当前核心卡片类型区分开。
+- StoryAxis 工作流命名必须统一收口到 `StoryAxis` 家族下。
+- StoryAxis 工作流应主要操作 StoryAxis 自有卡片与 prompt。
+- 除非是必须共享的底层 runtime 修复，否则避免大面积改写 `main` 默认工作流链。
 
-## Naming Rules
+## 命名规则
 
-- Project template id: `storyaxis`
-- Workflow names: `StoryAxis·...`
-- StoryAxis-specific card types should use clearly namespaced names to avoid collision with `main`'s baseline card ecosystem.
+- 项目模板标识：`storyaxis`
+- 工作流命名：`StoryAxis·...`
+- StoryAxis 专属卡片类型应采用清晰的命名空间，避免与 `main` 基线卡片体系重名。
 
-## Integration Principles
+## 集成原则
 
-- Prefer additive integration over replacing `main` behavior.
-- Shared low-level fixes are allowed when they are true compatibility/runtime infrastructure.
-- Business-specific StoryAxis behavior should be isolated into StoryAxis resources:
-  - card types
+- 优先采用新增式集成，而不是替换 `main` 现有行为。
+- 只有真正属于底层兼容与运行时基础设施的修复，才允许进入共享公共层。
+- StoryAxis 的业务行为应尽量隔离在 StoryAxis 自有资源中：
+  - 卡片类型
   - prompts
-  - workflows
-  - editor components
+  - 工作流
+  - 编辑器组件
   - schemas
 
-## Non-Goals
+## 非目标
 
-- Do not treat StoryAxis as a separate app shell.
-- Do not revert `main`'s capability probe or newer LLM config UX.
-- Do not collapse StoryAxis into `main`'s existing card/workflow names.
-- Do not rely on database-edited workflow definitions as the long-term source of truth for StoryAxis built-in workflows.
+- 不把 StoryAxis 做成独立应用壳。
+- 不回退 `main` 当前的 capability probe 与较新的 LLM 配置 UX。
+- 不把 StoryAxis 收缩成对 `main` 现有卡片与工作流名字的简单复用。
+- 不把数据库里手工编辑过的工作流定义当作 StoryAxis 内置工作流的长期真源。
 
-## Delivery Sequence
+## 交付顺序
 
-1. Preserve/port DeepSeek low-level compatibility.
-2. Introduce StoryAxis schema/model support.
-3. Introduce StoryAxis card types, prompts, and context templates.
-4. Introduce StoryAxis built-in workflows under `backend/app/bootstrap/workflows`.
-5. Wire StoryAxis-specific editor components where required.
-6. Verify that StoryAxis remains additive to `main`, with minimal conflict against future `origin/main` updates.
+1. 保留并迁移 DeepSeek 底层兼容能力。
+2. 引入 StoryAxis schema / model 支持。
+3. 引入 StoryAxis 卡片类型、prompts 与上下文模板。
+4. 引入位于 `backend/app/bootstrap/workflows` 下的 StoryAxis 内置工作流。
+5. 接好 StoryAxis 所需的专用编辑器组件。
+6. 验证 StoryAxis 对 `main` 是新增式并行集成，并尽量减少未来跟进 `origin/main` 时的冲突。

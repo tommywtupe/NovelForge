@@ -77,3 +77,5 @@ docker-compose.yml
 temp-command.txt
 test/
 repomix-output.xml
+.cache/
+.npm/
