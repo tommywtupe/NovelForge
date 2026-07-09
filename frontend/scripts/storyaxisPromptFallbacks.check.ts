@@ -4,15 +4,39 @@ import {
   getStoryAxisChapterEditorPromptDefaults,
   getStoryAxisGenerationPreset,
   getStoryAxisReviewPrompt,
-} from '../src/renderer/src/services/storyaxisPromptFallbacks'
+} from '../src/renderer/src/services/storyaxisPromptFallbacks.ts'
+
+const storyaxisCardTypes = [
+  'StoryAxis·金手指',
+  'StoryAxis·一句话梗概',
+  'StoryAxis·故事大纲',
+  'StoryAxis·世界观设定',
+  'StoryAxis·核心蓝图',
+  'StoryAxis·分卷大纲',
+  'StoryAxis·写作指南',
+  'StoryAxis·阶段大纲',
+  'StoryAxis·章节大纲',
+  'StoryAxis·章节正文',
+  'StoryAxis·角色卡',
+  'StoryAxis·场景卡',
+  'StoryAxis·组织卡',
+  'StoryAxis·正文翻译卡',
+] as const
 
 assert.deepEqual(getStoryAxisGenerationPreset('StoryAxis·章节正文'), {
   prompt_name: 'StoryAxis·内容生成',
   response_model_name: 'Chapter',
   temperature: 0.7,
-  max_tokens: 8192,
-  timeout: 60,
+  max_tokens: 200193,
+  timeout: 600,
 })
+
+for (const typeName of storyaxisCardTypes) {
+  const preset = getStoryAxisGenerationPreset(typeName)
+  assert.ok(preset, `${typeName} should expose a StoryAxis preset`)
+  assert.equal(preset.max_tokens, 200193, `${typeName} should use the StoryAxis max token limit`)
+  assert.equal(preset.timeout, 600, `${typeName} should use the StoryAxis timeout`)
+}
 
 assert.equal(getStoryAxisReviewPrompt('StoryAxis·阶段大纲'), 'StoryAxis·阶段审核')
 

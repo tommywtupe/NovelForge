@@ -16,6 +16,23 @@ from app.db.models import CardType, Workflow
 
 
 class StoryAxisBootstrapIntegrationTests(unittest.TestCase):
+    STORYAXIS_AI_CARD_TYPES = [
+        "StoryAxis·金手指",
+        "StoryAxis·一句话梗概",
+        "StoryAxis·故事大纲",
+        "StoryAxis·世界观设定",
+        "StoryAxis·核心蓝图",
+        "StoryAxis·分卷大纲",
+        "StoryAxis·写作指南",
+        "StoryAxis·阶段大纲",
+        "StoryAxis·章节大纲",
+        "StoryAxis·章节正文",
+        "StoryAxis·角色卡",
+        "StoryAxis·场景卡",
+        "StoryAxis·组织卡",
+        "StoryAxis·正文翻译卡",
+    ]
+
     def setUp(self) -> None:
         self.engine = create_engine(
             "sqlite://",
@@ -99,6 +116,52 @@ class StoryAxisBootstrapIntegrationTests(unittest.TestCase):
         self.assertEqual(card_types["StoryAxis·场景卡"].ai_params["prompt_name"], "StoryAxis·内容生成")
         self.assertEqual(card_types["StoryAxis·组织卡"].ai_params["prompt_name"], "StoryAxis·关系提取")
         self.assertEqual(card_types["StoryAxis·正文翻译卡"].ai_params["prompt_name"], "StoryAxis·正文翻译")
+
+    def test_storyaxis_card_types_use_unified_sampling_limits(self) -> None:
+        with Session(self.engine) as session:
+            create_default_card_types(session)
+
+            card_types = {
+                item.name: item
+                for item in session.exec(
+                    select(CardType).where(
+                        CardType.name.in_(self.STORYAXIS_AI_CARD_TYPES)
+                    )
+                ).all()
+            }
+
+        for type_name in self.STORYAXIS_AI_CARD_TYPES:
+            self.assertEqual(card_types[type_name].ai_params["max_tokens"], 200193)
+            self.assertEqual(card_types[type_name].ai_params["timeout"], 600)
+
+    def test_storyaxis_existing_builtins_refresh_sampling_limits(self) -> None:
+        with Session(self.engine) as session:
+            stale = CardType(
+                name="StoryAxis·章节正文",
+                model_name="Chapter",
+                ai_params={
+                    "prompt_name": "StoryAxis·内容生成",
+                    "temperature": 0.7,
+                    "max_tokens": 12000,
+                    "timeout": 180,
+                    "llm_config_id": 9,
+                },
+                built_in=True,
+            )
+            session.add(stale)
+            session.commit()
+
+            create_default_card_types(session)
+
+            refreshed = session.exec(
+                select(CardType).where(CardType.name == "StoryAxis·章节正文")
+            ).first()
+
+        self.assertIsNotNone(refreshed)
+        self.assertEqual(refreshed.ai_params["prompt_name"], "StoryAxis·内容生成")
+        self.assertEqual(refreshed.ai_params["llm_config_id"], 9)
+        self.assertEqual(refreshed.ai_params["max_tokens"], 200193)
+        self.assertEqual(refreshed.ai_params["timeout"], 600)
 
 
 if __name__ == "__main__":

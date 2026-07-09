@@ -89,6 +89,9 @@ FIELD_TITLE_ZH_MAP: Dict[str, str] = {
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
+STORYAXIS_DEFAULT_MAX_TOKENS = 200193
+STORYAXIS_DEFAULT_TIMEOUT = 600
+
 
 def _contains_cjk(text: str) -> bool:
     return bool(_CJK_RE.search(text or ""))
@@ -150,6 +153,23 @@ def _localize_schema_titles(schema: Any) -> Any:
 
     visit(schema)
     return schema
+
+
+def _storyaxis_ai_params(prompt_name: str, temperature: float) -> dict[str, Any]:
+    return {
+        "prompt_name": prompt_name,
+        "temperature": temperature,
+        "max_tokens": STORYAXIS_DEFAULT_MAX_TOKENS,
+        "timeout": STORYAXIS_DEFAULT_TIMEOUT,
+    }
+
+
+def _sync_storyaxis_sampling_limits(ai_params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **ai_params,
+        "max_tokens": STORYAXIS_DEFAULT_MAX_TOKENS,
+        "timeout": STORYAXIS_DEFAULT_TIMEOUT,
+    }
 
 @initializer(name="卡片类型", order=20)
 def create_default_card_types(session: Session) -> None:
@@ -457,23 +477,23 @@ def create_default_card_types(session: Session) -> None:
         "组织卡": {"prompt_name": "关系提取", "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
         "物品卡": None,
         "概念卡": None,
-        sa("金手指"): {"prompt_name": sa("金手指生成"), "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        sa("一句话梗概"): {"prompt_name": sa("一句话梗概"), "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        sa("故事大纲"): {"prompt_name": sa("一段话大纲"), "temperature": 0.7, "max_tokens": 8192, "timeout": 120},
-        sa("世界观设定"): {"prompt_name": sa("世界观设定"), "temperature": 0.7, "max_tokens": 4096, "timeout": 150},
-        sa("核心蓝图"): {"prompt_name": sa("核心蓝图"), "temperature": 0.7, "max_tokens": 8192, "timeout": 150},
-        sa("分卷大纲"): {"prompt_name": sa("分卷大纲"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
-        sa("写作指南"): {"prompt_name": sa("写作指南"), "temperature": 0.6, "max_tokens": 8192, "timeout": 150},
-        sa("阶段大纲"): {"prompt_name": sa("阶段大纲"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
-        sa("章节大纲"): {"prompt_name": sa("章节大纲"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
-        sa("章节正文"): {"prompt_name": sa("内容生成"), "temperature": 0.7, "max_tokens": 12000, "timeout": 180},
+        sa("金手指"): _storyaxis_ai_params(sa("金手指生成"), 0.6),
+        sa("一句话梗概"): _storyaxis_ai_params(sa("一句话梗概"), 0.6),
+        sa("故事大纲"): _storyaxis_ai_params(sa("一段话大纲"), 0.7),
+        sa("世界观设定"): _storyaxis_ai_params(sa("世界观设定"), 0.7),
+        sa("核心蓝图"): _storyaxis_ai_params(sa("核心蓝图"), 0.7),
+        sa("分卷大纲"): _storyaxis_ai_params(sa("分卷大纲"), 0.7),
+        sa("写作指南"): _storyaxis_ai_params(sa("写作指南"), 0.6),
+        sa("阶段大纲"): _storyaxis_ai_params(sa("阶段大纲"), 0.7),
+        sa("章节大纲"): _storyaxis_ai_params(sa("章节大纲"), 0.7),
+        sa("章节正文"): _storyaxis_ai_params(sa("内容生成"), 0.7),
         sa("内容审核卡片"): None,
-        sa("角色卡"): {"prompt_name": sa("角色动态信息提取"), "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        sa("场景卡"): {"prompt_name": sa("内容生成"), "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
-        sa("组织卡"): {"prompt_name": sa("关系提取"), "temperature": 0.6, "max_tokens": 4096, "timeout": 120},
+        sa("角色卡"): _storyaxis_ai_params(sa("角色动态信息提取"), 0.6),
+        sa("场景卡"): _storyaxis_ai_params(sa("内容生成"), 0.6),
+        sa("组织卡"): _storyaxis_ai_params(sa("关系提取"), 0.6),
         sa("物品卡"): None,
         sa("概念卡"): None,
-        sa("正文翻译卡"): {"prompt_name": sa("正文翻译"), "temperature": 0.3, "max_tokens": 65536, "timeout": 300},
+        sa("正文翻译卡"): _storyaxis_ai_params(sa("正文翻译"), 0.3),
         sa("翻译术语表"): None,
     }
 
@@ -576,6 +596,8 @@ def create_default_card_types(session: Session) -> None:
                 preset = DEFAULT_AI_PARAMS.get(name)
                 if preset is not None:
                     ct.ai_params = {**preset, "llm_config_id": (default_llm.id if default_llm else None)}
+            elif name.startswith("StoryAxis·") and DEFAULT_AI_PARAMS.get(name) is not None:
+                ct.ai_params = _sync_storyaxis_sampling_limits(dict(ct.ai_params or {}))
             # 若缺失 model_name 则按映射补齐
             if not getattr(ct, 'model_name', None):
                 ct.model_name = TYPE_TO_MODEL_KEY.get(name, name)
