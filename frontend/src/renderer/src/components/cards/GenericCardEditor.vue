@@ -228,6 +228,10 @@ import {
   type ReviewRunRequest,
   upsertReviewCard,
 } from '@renderer/api/chapterReviews'
+import {
+  getStoryAxisGenerationPreset,
+  getStoryAxisReviewPrompt,
+} from '@renderer/services/storyaxisPromptFallbacks'
 // 指令流生成相关导入
 import GenerationPanel from '../generation/GenerationPanel.vue'
 import InitialPromptDialog from '../generation/InitialPromptDialog.vue'
@@ -485,6 +489,8 @@ const reviewPrompts = computed(() => {
 const currentReviewPrompt = ref('')
 
 function getDefaultReviewPromptForCardType(cardTypeName?: string | null): string {
+  const storyaxisReviewPrompt = getStoryAxisReviewPrompt(cardTypeName)
+  if (storyaxisReviewPrompt) return storyaxisReviewPrompt
   if (cardTypeName === '阶段大纲') return '阶段审核'
   return '通用审核'
 }
@@ -678,6 +684,8 @@ function resetToPreset() {
 }
 
 function getPresetForType(typeName?: string) : PerCardAIParams | undefined {
+  const storyaxisPreset = getStoryAxisGenerationPreset(typeName)
+  if (storyaxisPreset) return storyaxisPreset
   // 兼容旧预设：按照类型名提供简易默认值
   const map: Record<string, PerCardAIParams> = {
     '金手指': { prompt_name: '金手指生成', response_model_name: 'SpecialAbilityResponse', temperature: 0.6, max_tokens: 1024, timeout: 60 },

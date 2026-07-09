@@ -55,6 +55,7 @@ import { Setting } from '@element-plus/icons-vue'
 import { usePerCardAISettingsStore, type PerCardAIParams } from '@renderer/stores/usePerCardAISettingsStore'
 import { getAIConfigOptions, type AIConfigOptions } from '@renderer/api/ai'
 import { getCardAIParams, updateCardAIParams, applyCardAIParamsToType } from '@renderer/api/setting'
+import { getStoryAxisGenerationPreset } from '@renderer/services/storyaxisPromptFallbacks'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps<{ cardId: number; cardTypeName?: string }>()
@@ -105,6 +106,8 @@ watch(() => props.cardId, async (id) => {
 }, { immediate: true })
 
 function getPresetForType(typeName?: string): PerCardAIParams {
+	const storyaxisPreset = getStoryAxisGenerationPreset(typeName)
+	if (storyaxisPreset) return storyaxisPreset
 	const map: Record<string, PerCardAIParams> = {
 		'金手指': { prompt_name: '金手指生成', temperature: 0.6, max_tokens: 1024, timeout: 60 },
 		'一句话梗概': { prompt_name: '一句话梗概', temperature: 0.6, max_tokens: 1024, timeout: 60 },

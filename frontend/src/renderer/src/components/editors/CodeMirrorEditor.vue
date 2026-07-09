@@ -1179,6 +1179,7 @@ import AIPerCardParams from '../common/AIPerCardParams.vue'
 import ContinuationBudgetDialog, { type ContinuationWordControlMode } from './dialogs/ContinuationBudgetDialog.vue'
 import { resolveTemplate } from '@renderer/services/contextResolver'
 import { getCardContextTemplates, getContextTemplateByKind, normalizeContextTemplateKind, type ContextTemplateKind, type ContextTemplates } from '@renderer/services/contextSlots'
+import { getStoryAxisChapterEditorPromptDefaults, getStoryAxisGenerationPreset } from '@renderer/services/storyaxisPromptFallbacks'
 import { notifyTaskDone } from '@renderer/utils/taskDoneNotifier'
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
@@ -1418,6 +1419,8 @@ function resetToPreset() {
 	perCardStore.setForCard(props.card.id, editingParams.value)
 }
 function getPresetForType(typeName?: string) : PerCardAIParams | undefined {
+	const storyaxisPreset = getStoryAxisGenerationPreset(typeName)
+	if (storyaxisPreset) return storyaxisPreset
 	const map: Record<string, PerCardAIParams> = {
 		'章节大纲': { prompt_name: '章节大纲', llm_config_id: 1, temperature: 0.6, max_tokens: 4096, timeout: 60 },
 		'内容生成': { prompt_name: '内容生成', llm_config_id: 1, temperature: 0.7, max_tokens: 8192, timeout: 60 },
@@ -1871,13 +1874,14 @@ const lineHeight = ref<number>(1.8)
 // 润色和扩写的提示词列表
 const polishPrompts = ref<string[]>([])
 const expandPrompts = ref<string[]>([])
-const currentPolishPrompt = ref('润色')
-const currentExpandPrompt = ref('扩写')
+const initialStoryAxisChapterPrompts = getStoryAxisChapterEditorPromptDefaults(props.card.card_type?.name)
+const currentPolishPrompt = ref(initialStoryAxisChapterPrompts?.polish || '润色')
+const currentExpandPrompt = ref(initialStoryAxisChapterPrompts?.expand || '扩写')
 const fontSizePx = computed(() => `${fontSize.value}px`)
 const lineHeightStr = computed(() => String(lineHeight.value))
 
 const reviewPrompts = ref<string[]>([])
-const currentReviewPrompt = ref('章节审核')
+const currentReviewPrompt = ref(initialStoryAxisChapterPrompts?.review || '章节审核')
 type PromptPickerKey = 'polish' | 'expand' | 'review'
 
 const promptPicker = reactive<Record<PromptPickerKey, { visible: boolean; keyword: string }>>({
@@ -2195,38 +2199,43 @@ async function loadPrompts() {
 	try {
 		const options = await getAIConfigOptions()
 		const allPrompts = options?.prompts || []
+		const storyaxisChapterPrompts = getStoryAxisChapterEditorPromptDefaults(props.card.card_type?.name)
+		const defaultPolishPrompt = storyaxisChapterPrompts?.polish || '润色'
+		const defaultExpandPrompt = storyaxisChapterPrompts?.expand || '扩写'
+		const defaultReviewPrompt = storyaxisChapterPrompts?.review || '章节审核'
 
 		// 获取所有提示词名称
 		const allPromptNames = allPrompts.map(p => p.name)
-		reviewPrompts.value = allPromptNames.length > 0 ? allPromptNames : ['章节审核']
+		reviewPrompts.value = allPromptNames.length > 0 ? allPromptNames : [defaultReviewPrompt]
 
 		// 润色和扩写都使用所有可用提示词
-		polishPrompts.value = allPromptNames.length > 0 ? allPromptNames : ['润色']
-		expandPrompts.value = allPromptNames.length > 0 ? allPromptNames : ['扩写']
+		polishPrompts.value = allPromptNames.length > 0 ? allPromptNames : [defaultPolishPrompt]
+		expandPrompts.value = allPromptNames.length > 0 ? allPromptNames : [defaultExpandPrompt]
 
 		// 设置默认选中的提示词
-		if (allPromptNames.includes('润色')) {
-			currentPolishPrompt.value = '润色'
+		if (allPromptNames.includes(defaultPolishPrompt)) {
+			currentPolishPrompt.value = defaultPolishPrompt
 		} else if (allPromptNames.length > 0) {
 			currentPolishPrompt.value = allPromptNames[0]
 		}
 
-		if (allPromptNames.includes('扩写')) {
-			currentExpandPrompt.value = '扩写'
+		if (allPromptNames.includes(defaultExpandPrompt)) {
+			currentExpandPrompt.value = defaultExpandPrompt
 		} else if (allPromptNames.length > 0) {
 			currentExpandPrompt.value = allPromptNames[0]
 		}
 
-		if (allPromptNames.includes('章节审核')) {
-			currentReviewPrompt.value = '章节审核'
+		if (allPromptNames.includes(defaultReviewPrompt)) {
+			currentReviewPrompt.value = defaultReviewPrompt
 		} else if (allPromptNames.length > 0) {
 			currentReviewPrompt.value = allPromptNames[0]
 		}
 	} catch (e) {
 		console.error('Failed to load prompts:', e)
-		reviewPrompts.value = ['章节审核']
-		polishPrompts.value = ['润色']
-		expandPrompts.value = ['扩写']
+		const storyaxisChapterPrompts = getStoryAxisChapterEditorPromptDefaults(props.card.card_type?.name)
+		reviewPrompts.value = [storyaxisChapterPrompts?.review || '章节审核']
+		polishPrompts.value = [storyaxisChapterPrompts?.polish || '润色']
+		expandPrompts.value = [storyaxisChapterPrompts?.expand || '扩写']
 	}
 }
 
@@ -2460,7 +2469,7 @@ async function executeReview() {
 			facts_info: factsText || undefined,
 			content_snapshot: chapterText,
 			llm_config_id: llmConfigId,
-			prompt_name: currentReviewPrompt.value || '章节审核',
+			prompt_name: currentReviewPrompt.value || getStoryAxisChapterEditorPromptDefaults(props.card.card_type?.name)?.review || '章节审核',
 			meta: {
 				source: 'chapter_editor',
 				card_type_name: props.card.card_type?.name || '',
