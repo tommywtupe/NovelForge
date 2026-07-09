@@ -61,6 +61,7 @@ class StoryAxisBootstrapResourceTests(unittest.TestCase):
         }
 
         self.assertTrue(required_prompts.issubset(set(prompt_files.keys())))
+        self.assertIn("目标字数：默认4000", prompt_files["StoryAxis·章节大纲"]["template"])
 
     def test_storyaxis_workflows_are_namespaced_and_use_storyaxis_template(self) -> None:
         workflow_files = workflow_bootstrap.get_all_workflow_files()

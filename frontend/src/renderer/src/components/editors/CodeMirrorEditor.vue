@@ -1179,7 +1179,11 @@ import AIPerCardParams from '../common/AIPerCardParams.vue'
 import ContinuationBudgetDialog, { type ContinuationWordControlMode } from './dialogs/ContinuationBudgetDialog.vue'
 import { resolveTemplate } from '@renderer/services/contextResolver'
 import { getCardContextTemplates, getContextTemplateByKind, normalizeContextTemplateKind, type ContextTemplateKind, type ContextTemplates } from '@renderer/services/contextSlots'
-import { getStoryAxisChapterEditorPromptDefaults, getStoryAxisGenerationPreset } from '@renderer/services/storyaxisPromptFallbacks'
+import {
+	getStoryAxisChapterContinuationTargetWordCount,
+	getStoryAxisChapterEditorPromptDefaults,
+	getStoryAxisGenerationPreset,
+} from '@renderer/services/storyaxisPromptFallbacks'
 import { notifyTaskDone } from '@renderer/utils/taskDoneNotifier'
 
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
@@ -1195,6 +1199,9 @@ const props = defineProps<{
 	generationContextKind?: ContextTemplateKind
 	reviewContextKind?: ContextTemplateKind
 }>()
+
+const defaultContinuationTargetWordCount =
+	getStoryAxisChapterContinuationTargetWordCount(props.card.card_type?.name) ?? 3000
 
 const previewConfirmReminder =
 	'若信息提取有误，如卡片名称不准确，请手动编辑调整后再确认，避免数据回写对应卡片失败'
@@ -1616,7 +1623,7 @@ const continuationDialogState = reactive<{
 	wordControlMode: ContinuationWordControlMode
 	guidance: string
 }>({
-	targetWordCount: 3000,
+	targetWordCount: defaultContinuationTargetWordCount,
 	wordControlMode: 'balanced',
 	guidance: '',
 })
@@ -1855,7 +1862,7 @@ const activeContinuationConfig = reactive<{
 	targetWordCount: number
 	wordControlMode: ContinuationWordControlMode
 }>({
-	targetWordCount: 3000,
+	targetWordCount: defaultContinuationTargetWordCount,
 	wordControlMode: 'balanced',
 })
 
@@ -2005,7 +2012,7 @@ function getSelectionWithLineInfo(): {
 }
 
 function resolveContinuationDefaults() {
-	let targetWordCount = 3000
+	let targetWordCount = defaultContinuationTargetWordCount
 	let wordControlMode: ContinuationWordControlMode = 'balanced'
 	try {
 		const storedTarget = Number(localStorage.getItem(`nf:chapter:continuation-target:${props.card.id}`) || '')

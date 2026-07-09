@@ -63,6 +63,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { shouldStoryAxisUseExistingContentByDefault } from '@renderer/services/storyaxisPromptFallbacks'
 
 // ==================== Props & Emits ====================
 
@@ -90,6 +91,15 @@ const examples = ref<string[]>([
   '经验丰富的商人，善于谈判'
 ])
 
+function getDefaultUseExistingContent(): boolean {
+  return shouldStoryAxisUseExistingContentByDefault(props.cardTypeName)
+}
+
+function resetDialogState() {
+  userPrompt.value = ''
+  useExistingContent.value = getDefaultUseExistingContent()
+}
+
 // ==================== 方法 ====================
 
 /**
@@ -98,8 +108,7 @@ const examples = ref<string[]>([
 function handleStartGenerate() {
   emit('confirm', userPrompt.value.trim(), useExistingContent.value)
   dialogVisible.value = false
-  userPrompt.value = ''
-  useExistingContent.value = false
+  resetDialogState()
 }
 
 /**
@@ -108,8 +117,7 @@ function handleStartGenerate() {
 function handleSkip() {
   emit('confirm', '', useExistingContent.value)
   dialogVisible.value = false
-  userPrompt.value = ''
-  useExistingContent.value = false
+  resetDialogState()
 }
 
 /**
@@ -118,13 +126,16 @@ function handleSkip() {
 function handleCancel() {
   emit('cancel')
   dialogVisible.value = false
-  userPrompt.value = ''
+  resetDialogState()
 }
 
 // ==================== 监听 ====================
 
 watch(() => props.visible, (val) => {
   dialogVisible.value = val
+  if (val) {
+    resetDialogState()
+  }
 })
 
 watch(dialogVisible, (val) => {
@@ -134,6 +145,10 @@ watch(dialogVisible, (val) => {
 // 根据卡片类型调整示例
 watch(() => props.cardTypeName, (typeName) => {
   if (!typeName) return
+
+  if (dialogVisible.value) {
+    useExistingContent.value = getDefaultUseExistingContent()
+  }
 
   // 可以根据不同的卡片类型提供不同的示例
   if (typeName.includes('角色') || typeName.includes('Character')) {

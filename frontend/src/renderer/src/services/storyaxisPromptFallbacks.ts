@@ -55,6 +55,10 @@ const STORYAXIS_CHAPTER_EDITOR_PROMPTS: Record<string, StoryAxisChapterEditorPro
   },
 }
 
+const STORYAXIS_CHAPTER_CONTINUATION_TARGET_WORD_COUNTS: Record<string, number> = {
+  'StoryAxis·章节正文': 4000,
+}
+
 export function getStoryAxisGenerationPreset(typeName?: string): StoryAxisPromptPreset | undefined {
   if (!typeName) return undefined
   const preset = STORYAXIS_GENERATION_PRESETS[typeName]
@@ -72,4 +76,16 @@ export function getStoryAxisChapterEditorPromptDefaults(
   if (!cardTypeName) return undefined
   const defaults = STORYAXIS_CHAPTER_EDITOR_PROMPTS[cardTypeName]
   return defaults ? { ...defaults } : undefined
+}
+
+export function shouldStoryAxisUseExistingContentByDefault(typeName?: string | null): boolean {
+  if (!typeName) return false
+  return Boolean(STORYAXIS_GENERATION_PRESETS[typeName])
+}
+
+export function getStoryAxisChapterContinuationTargetWordCount(
+  cardTypeName?: string | null
+): number | undefined {
+  if (!cardTypeName) return undefined
+  return STORYAXIS_CHAPTER_CONTINUATION_TARGET_WORD_COUNTS[cardTypeName]
 }

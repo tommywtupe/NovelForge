@@ -1,9 +1,11 @@
 import * as assert from 'node:assert/strict'
 
 import {
+  getStoryAxisChapterContinuationTargetWordCount,
   getStoryAxisChapterEditorPromptDefaults,
   getStoryAxisGenerationPreset,
   getStoryAxisReviewPrompt,
+  shouldStoryAxisUseExistingContentByDefault,
 } from '../src/renderer/src/services/storyaxisPromptFallbacks.ts'
 
 const storyaxisCardTypes = [
@@ -46,6 +48,11 @@ assert.deepEqual(getStoryAxisChapterEditorPromptDefaults('StoryAxis·章节正�
   expand: 'StoryAxis·扩写',
   review: 'StoryAxis·章节审核',
 })
+
+assert.equal(shouldStoryAxisUseExistingContentByDefault('StoryAxis·章节大纲'), true)
+assert.equal(shouldStoryAxisUseExistingContentByDefault('章节大纲'), false)
+assert.equal(getStoryAxisChapterContinuationTargetWordCount('StoryAxis·章节正文'), 4000)
+assert.equal(getStoryAxisChapterContinuationTargetWordCount('章节正文'), undefined)
 
 assert.equal(getStoryAxisGenerationPreset('章节正文'), undefined)
 assert.equal(getStoryAxisReviewPrompt('阶段大纲'), undefined)
